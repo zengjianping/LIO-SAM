@@ -1,4 +1,4 @@
-#include "utility.h"
+#include "nodeUtility.h"
 #include "lio_sam/cloud_info.h"
 
 struct VelodynePointXYZIRT
@@ -35,61 +35,55 @@ using PointXYZIRT = VelodynePointXYZIRT;
 
 const int queueLength = 2000;
 
-class ImageProjection : public ParamServer
+class ImageProjection : public RosBaseNode
 {
 private:
+    std::mutex imuLock; // IMU队列线程锁
+    std::mutex odoLock; // IMU里程计队列线程锁
 
-    std::mutex imuLock;
-    std::mutex odoLock;
-
-    ros::Subscriber subLaserCloud;
-    ros::Publisher  pubLaserCloud;
-    
-    ros::Publisher pubExtractedCloud;
-    ros::Publisher pubLaserCloudInfo;
-
-    ros::Subscriber subImu;
+    //ros::NodeHandle nh; // 节点句柄
+    ros::Subscriber subImu; // 订阅原始IMU数据
     std::deque<sensor_msgs::Imu> imuQueue;
-
-    ros::Subscriber subOdom;
+    ros::Subscriber subOdom; // 订阅IMU里程计数据，来自imuPreintegration
     std::deque<nav_msgs::Odometry> odomQueue;
-
+    ros::Subscriber subLaserCloud; // 订阅原始雷达点云数据
     std::deque<sensor_msgs::PointCloud2> cloudQueue;
-    sensor_msgs::PointCloud2 currentCloudMsg;
 
+    ros::Publisher pubExtractedCloud; // 发布去畸变的点云
+    // 发布去完畸变后的点云信息
+    // 包括：原始点云、去畸变点云、该帧点云的初始旋转旋转角（来自IMU原始roll、pitch、yaw）、该帧点云的初始位姿（来自IMU里程计）
+    ros::Publisher pubLaserCloudInfo;
+    lio_sam::cloud_info cloudInfo; // 发布的数据结构
+
+    // 记录每一帧点云从起始到结束过程所有的IMU数据，imuRotX,Y,Z是对这一段时间内的角速度累加的结果
     double *imuTime = new double[queueLength];
     double *imuRotX = new double[queueLength];
     double *imuRotY = new double[queueLength];
     double *imuRotZ = new double[queueLength];
-
-    int imuPointerCur;
-    bool firstPointFlag;
+    
+    int imuPointerCur; // 记录每一帧点云起止过程中imuTime、imuRotXYZ的实际数据长度
+    bool firstPointFlag; // 处理第一个点时，将该点的旋转取逆，记录到transStartInverse中，后续方便计算旋转的增量
     Eigen::Affine3f transStartInverse;
 
-    pcl::PointCloud<PointXYZIRT>::Ptr laserCloudIn;
-    pcl::PointCloud<OusterPointXYZIRT>::Ptr tmpOusterCloudIn;
-    pcl::PointCloud<PointType>::Ptr   fullCloud;
-    pcl::PointCloud<PointType>::Ptr   extractedCloud;
+    int deskewFlag; // 当点云的time/t字段不可用，也就是点云中不包含每个点的时间戳，无法进行去畸变，直接返回原始点云
+    cv::Mat rangeMat; // 存储点云的range图像
 
-    int deskewFlag;
-    cv::Mat rangeMat;
-
-    bool odomDeskewFlag;
-    float odomIncreX;
+    bool odomDeskewFlag; // 是否有合适的IMU里程计数据
+    float odomIncreX; // 记录从IMU里程计出来的平移增量，用来做平移去畸变，实际中没有使用到
     float odomIncreY;
     float odomIncreZ;
 
-    lio_sam::cloud_info cloudInfo;
-    double timeScanCur;
-    double timeScanEnd;
-    std_msgs::Header cloudHeader;
-
-    vector<int> columnIdnCountVec;
+    sensor_msgs::PointCloud2 currentCloudMsg; // 从点云队列中提取出当前点云帧做处理
+    std_msgs::Header cloudHeader; // 当前雷达帧的header
+    double timeScanCur; // 当前雷达帧的起始时间
+    double timeScanEnd; // 当前雷达帧的结束时间
+    pcl::PointCloud<PointXYZIRT>::Ptr laserCloudIn;
+    pcl::PointCloud<PointType>::Ptr fullCloud;
+    pcl::PointCloud<PointType>::Ptr extractedCloud;
 
 
 public:
-    ImageProjection():
-    deskewFlag(0)
+    ImageProjection(): deskewFlag(0)
     {
         subImu        = nh.subscribe<sensor_msgs::Imu>(imuTopic, 2000, &ImageProjection::imuHandler, this, ros::TransportHints().tcpNoDelay());
         subOdom       = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental", 2000, &ImageProjection::odometryHandler, this, ros::TransportHints().tcpNoDelay());
@@ -107,15 +101,12 @@ public:
     void allocateMemory()
     {
         laserCloudIn.reset(new pcl::PointCloud<PointXYZIRT>());
-        tmpOusterCloudIn.reset(new pcl::PointCloud<OusterPointXYZIRT>());
         fullCloud.reset(new pcl::PointCloud<PointType>());
-        extractedCloud.reset(new pcl::PointCloud<PointType>());
-
         fullCloud->points.resize(N_SCAN*Horizon_SCAN);
+        extractedCloud.reset(new pcl::PointCloud<PointType>());
 
         cloudInfo.startRingIndex.assign(N_SCAN, 0);
         cloudInfo.endRingIndex.assign(N_SCAN, 0);
-
         cloudInfo.pointColInd.assign(N_SCAN*Horizon_SCAN, 0);
         cloudInfo.pointRange.assign(N_SCAN*Horizon_SCAN, 0);
 
@@ -140,15 +131,13 @@ public:
             imuRotY[i] = 0;
             imuRotZ[i] = 0;
         }
-
-        columnIdnCountVec.assign(N_SCAN, 0);
     }
 
-    ~ImageProjection(){}
+    ~ImageProjection() {}
 
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
-        sensor_msgs::Imu thisImu = imuConverter(*imuMsg);
+        sensor_msgs::Imu thisImu = imuConvertOnLidar(*imuMsg, this->extRot, this->extQRPY);
 
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
@@ -211,6 +200,8 @@ public:
         else if (sensor == SensorType::OUSTER)
         {
             // Convert to Velodyne format
+            pcl::PointCloud<OusterPointXYZIRT>::Ptr tmpOusterCloudIn;
+            tmpOusterCloudIn.reset(new pcl::PointCloud<OusterPointXYZIRT>());
             pcl::moveFromROSMsg(currentCloudMsg, *tmpOusterCloudIn);
             laserCloudIn->points.resize(tmpOusterCloudIn->size());
             laserCloudIn->is_dense = tmpOusterCloudIn->is_dense;
@@ -552,6 +543,8 @@ public:
             }
             else if (sensor == SensorType::LIVOX)
             {
+                vector<int> columnIdnCountVec;
+                columnIdnCountVec.assign(N_SCAN, 0);
                 columnIdn = columnIdnCountVec[rowIdn];
                 columnIdnCountVec[rowIdn] += 1;
             }

@@ -1,4 +1,4 @@
-#include "utility.h"
+#include "nodeUtility.h"
 
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
@@ -20,189 +20,61 @@ using gtsam::symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
 using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 
-class TransformFusion : public ParamServer
+class IMUPreintegration : public RosBaseNode
 {
 public:
     std::mutex mtx;
 
-    ros::Subscriber subImuOdometry;
-    ros::Subscriber subLaserOdometry;
+    //ros::NodeHandle nh; // 节点句柄
+    ros::Subscriber subImu; // 订阅IMU原始数据
+    ros::Subscriber subOdometry; // 订阅Lidar里程计（来自mapOptimization)
+    ros::Publisher pubImuOdometry; // 发布IMU里程计
 
-    ros::Publisher pubImuOdometry;
-    ros::Publisher pubImuPath;
+    bool systemInitialized = false; // 标志系统初始化，主要是用来初始化gtsam
 
-    Eigen::Affine3f lidarOdomAffine;
-    Eigen::Affine3f imuOdomAffineFront;
-    Eigen::Affine3f imuOdomAffineBack;
+    // imuQueOpt用来给imuIntegratorOpt_提供数据来源。将当前激光里程计之前的数据统统做积分，优化出bias
+    std::deque<sensor_msgs::Imu> imuQueOpt;
+    // imuQueImu用来给imuIntegratorImu_提供数据来源。优化当前激光里程计之后，下一帧激光里程计到来之前的位姿
+    std::deque<sensor_msgs::Imu> imuQueImu;
 
-    tf::TransformListener tfListener;
-    tf::StampedTransform lidar2Baselink;
-
-    double lidarOdomTime = -1;
-    deque<nav_msgs::Odometry> imuOdomQueue;
-
-    TransformFusion()
-    {
-        if(lidarFrame != baselinkFrame)
-        {
-            try
-            {
-                tfListener.waitForTransform(lidarFrame, baselinkFrame, ros::Time(0), ros::Duration(3.0));
-                tfListener.lookupTransform(lidarFrame, baselinkFrame, ros::Time(0), lidar2Baselink);
-            }
-            catch (tf::TransformException ex)
-            {
-                ROS_ERROR("%s",ex.what());
-            }
-        }
-
-        subLaserOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry", 5, &TransformFusion::lidarOdometryHandler, this, ros::TransportHints().tcpNoDelay());
-        subImuOdometry   = nh.subscribe<nav_msgs::Odometry>(odomTopic+"_incremental",   2000, &TransformFusion::imuOdometryHandler,   this, ros::TransportHints().tcpNoDelay());
-
-        pubImuOdometry   = nh.advertise<nav_msgs::Odometry>(odomTopic, 2000);
-        pubImuPath       = nh.advertise<nav_msgs::Path>    ("lio_sam/imu/path", 1);
-    }
-
-    Eigen::Affine3f odom2affine(nav_msgs::Odometry odom)
-    {
-        double x, y, z, roll, pitch, yaw;
-        x = odom.pose.pose.position.x;
-        y = odom.pose.pose.position.y;
-        z = odom.pose.pose.position.z;
-        tf::Quaternion orientation;
-        tf::quaternionMsgToTF(odom.pose.pose.orientation, orientation);
-        tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
-        return pcl::getTransformation(x, y, z, roll, pitch, yaw);
-    }
-
-    void lidarOdometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-
-        lidarOdomAffine = odom2affine(*odomMsg);
-
-        lidarOdomTime = odomMsg->header.stamp.toSec();
-    }
-
-    void imuOdometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
-    {
-        // static tf
-        static tf::TransformBroadcaster tfMap2Odom;
-        static tf::Transform map_to_odom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
-        tfMap2Odom.sendTransform(tf::StampedTransform(map_to_odom, odomMsg->header.stamp, mapFrame, odometryFrame));
-
-        std::lock_guard<std::mutex> lock(mtx);
-
-        imuOdomQueue.push_back(*odomMsg);
-
-        // get latest odometry (at current IMU stamp)
-        if (lidarOdomTime == -1)
-            return;
-        while (!imuOdomQueue.empty())
-        {
-            if (imuOdomQueue.front().header.stamp.toSec() <= lidarOdomTime)
-                imuOdomQueue.pop_front();
-            else
-                break;
-        }
-        Eigen::Affine3f imuOdomAffineFront = odom2affine(imuOdomQueue.front());
-        Eigen::Affine3f imuOdomAffineBack = odom2affine(imuOdomQueue.back());
-        Eigen::Affine3f imuOdomAffineIncre = imuOdomAffineFront.inverse() * imuOdomAffineBack;
-        Eigen::Affine3f imuOdomAffineLast = lidarOdomAffine * imuOdomAffineIncre;
-        float x, y, z, roll, pitch, yaw;
-        pcl::getTranslationAndEulerAngles(imuOdomAffineLast, x, y, z, roll, pitch, yaw);
-        
-        // publish latest odometry
-        nav_msgs::Odometry laserOdometry = imuOdomQueue.back();
-        laserOdometry.pose.pose.position.x = x;
-        laserOdometry.pose.pose.position.y = y;
-        laserOdometry.pose.pose.position.z = z;
-        laserOdometry.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll, pitch, yaw);
-        pubImuOdometry.publish(laserOdometry);
-
-        // publish tf
-        static tf::TransformBroadcaster tfOdom2BaseLink;
-        tf::Transform tCur;
-        tf::poseMsgToTF(laserOdometry.pose.pose, tCur);
-        if(lidarFrame != baselinkFrame)
-            tCur = tCur * lidar2Baselink;
-        tf::StampedTransform odom_2_baselink = tf::StampedTransform(tCur, odomMsg->header.stamp, odometryFrame, baselinkFrame);
-        tfOdom2BaseLink.sendTransform(odom_2_baselink);
-
-        // publish IMU path
-        static nav_msgs::Path imuPath;
-        static double last_path_time = -1;
-        double imuTime = imuOdomQueue.back().header.stamp.toSec();
-        if (imuTime - last_path_time > 0.1)
-        {
-            last_path_time = imuTime;
-            geometry_msgs::PoseStamped pose_stamped;
-            pose_stamped.header.stamp = imuOdomQueue.back().header.stamp;
-            pose_stamped.header.frame_id = odometryFrame;
-            pose_stamped.pose = laserOdometry.pose.pose;
-            imuPath.poses.push_back(pose_stamped);
-            while(!imuPath.poses.empty() && imuPath.poses.front().header.stamp.toSec() < lidarOdomTime - 1.0)
-                imuPath.poses.erase(imuPath.poses.begin());
-            if (pubImuPath.getNumSubscribers() != 0)
-            {
-                imuPath.header.stamp = imuOdomQueue.back().header.stamp;
-                imuPath.header.frame_id = odometryFrame;
-                pubImuPath.publish(imuPath);
-            }
-        }
-    }
-};
-
-class IMUPreintegration : public ParamServer
-{
-public:
-
-    std::mutex mtx;
-
-    ros::Subscriber subImu;
-    ros::Subscriber subOdometry;
-    ros::Publisher pubImuOdometry;
-
-    bool systemInitialized = false;
-
+    // priorXXXNoise是因子图中添加第一个因子时指定的噪声
     gtsam::noiseModel::Diagonal::shared_ptr priorPoseNoise;
     gtsam::noiseModel::Diagonal::shared_ptr priorVelNoise;
     gtsam::noiseModel::Diagonal::shared_ptr priorBiasNoise;
+    // correctionNoise是小噪声，correctionNoise2是大噪声。在雷达里程计方差大的情况下使用大噪声，反之使用小噪声
     gtsam::noiseModel::Diagonal::shared_ptr correctionNoise;
     gtsam::noiseModel::Diagonal::shared_ptr correctionNoise2;
+    // IMU的Bias噪声模型
     gtsam::Vector noiseModelBetweenBias;
 
-
+    // imuIntegratorOpt_负责预积分两帧激光里程计之间的IMU数据，计算IMU的bias
     gtsam::PreintegratedImuMeasurements *imuIntegratorOpt_;
+    // imuIntegratorImu_根据最新的激光里程计，以及后续到到的IMU数据，预测从当前激光里程计往后的位姿（IMU里程计）
     gtsam::PreintegratedImuMeasurements *imuIntegratorImu_;
 
-    std::deque<sensor_msgs::Imu> imuQueOpt;
-    std::deque<sensor_msgs::Imu> imuQueImu;
-
+    // 因子图优化过程中的状态变量
     gtsam::Pose3 prevPose_;
     gtsam::Vector3 prevVel_;
     gtsam::NavState prevState_;
     gtsam::imuBias::ConstantBias prevBias_;
-
     gtsam::NavState prevStateOdom;
     gtsam::imuBias::ConstantBias prevBiasOdom;
 
-    bool doneFirstOpt = false;
-    double lastImuT_imu = -1;
-    double lastImuT_opt = -1;
-
-    gtsam::ISAM2 optimizer;
-    gtsam::NonlinearFactorGraph graphFactors;
-    gtsam::Values graphValues;
-
-    const double delta_t = 0;
-
+    gtsam::ISAM2 optimizer; // 因子图优化器
+    gtsam::NonlinearFactorGraph graphFactors; // 非线性因子图
+    gtsam::Values graphValues; // 因子图变量的值
+    
+    bool doneFirstOpt = false; // 第一帧初始化标签
+    double lastImuT_imu = -1; // 上一个IMU数据的时间(在IMU的handler中使用)
+    double lastImuT_opt = -1; // 上一个IMU数据的时间（在雷达里程计的handler中使用）
+    const double delta_t = 0; // 在做IMU数据和雷达里程计同步过程中的时间间隔
     int key = 1;
     
     // T_bl: tramsform points from lidar frame to imu frame 
     gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
     // T_lb: tramsform points from imu frame to lidar frame
     gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+
 
     IMUPreintegration()
     {
@@ -314,7 +186,6 @@ public:
             systemInitialized = true;
             return;
         }
-
 
         // reset graph for speed
         if (key == 100)
@@ -459,7 +330,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        sensor_msgs::Imu thisImu = imuConverter(*imu_raw);
+        sensor_msgs::Imu thisImu = imuConvertOnLidar(*imu_raw, this->extRot, this->extQRPY);
 
         imuQueOpt.push_back(thisImu);
         imuQueImu.push_back(thisImu);
@@ -513,8 +384,6 @@ int main(int argc, char** argv)
     
     IMUPreintegration ImuP;
 
-    TransformFusion TF;
-
     ROS_INFO("\033[1;32m----> IMU Preintegration Started.\033[0m");
     
     ros::MultiThreadedSpinner spinner(4);
@@ -522,3 +391,4 @@ int main(int argc, char** argv)
     
     return 0;
 }
+
