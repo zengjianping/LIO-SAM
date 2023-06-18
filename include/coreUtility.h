@@ -42,7 +42,7 @@ using namespace std;
 
 typedef pcl::PointXYZI PointType;
 
-enum class SensorType { VELODYNE, OUSTER, LIVOX };
+enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN };
 
 class SystemParameter
 {
@@ -79,10 +79,13 @@ public:
     int N_SCAN;
     int Horizon_SCAN;
     int downsampleRate;
+    int point_filter_num;
     float lidarMinRange;
     float lidarMaxRange;
 
     // IMU
+    int imuType;
+    float imuRate;
     float imuAccNoise;
     float imuGyrNoise;
     float imuAccBiasN;
@@ -120,15 +123,18 @@ public:
     float surroundingkeyframeAddingAngleThreshold; 
     float surroundingKeyframeDensity;
     float surroundingKeyframeSearchRadius;
+    float surroundingKeyframeMapLeafSize;
     
     // Loop closure
     bool  loopClosureEnableFlag;
     float loopClosureFrequency;
+    float loopClosureICPSurfLeafSize;
     int   surroundingKeyframeSize;
     float historyKeyframeSearchRadius;
     float historyKeyframeSearchTimeDiff;
     int   historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
+    bool  enableScanContextLoopClosure;
 
     // global map visualization radius
     float globalMapVisualizationSearchRadius;

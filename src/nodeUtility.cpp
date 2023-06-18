@@ -38,6 +38,14 @@ RosBaseNode::RosBaseNode()
     {
         sensor = SensorType::LIVOX;
     }
+    else if  (sensorStr == "robosense")
+    {
+        sensor = SensorType::ROBOSENSE;
+    }
+    else if (sensorStr == "mulran")
+    {
+        sensor = SensorType::MULRAN;
+    } 
     else
     {
         ROS_ERROR_STREAM(
@@ -48,9 +56,12 @@ RosBaseNode::RosBaseNode()
     nh.param<int>("lio_sam/N_SCAN", N_SCAN, 16);
     nh.param<int>("lio_sam/Horizon_SCAN", Horizon_SCAN, 1800);
     nh.param<int>("lio_sam/downsampleRate", downsampleRate, 1);
+    nh.param<int>("lio_sam/point_filter_num", point_filter_num, 3);
     nh.param<float>("lio_sam/lidarMinRange", lidarMinRange, 1.0);
     nh.param<float>("lio_sam/lidarMaxRange", lidarMaxRange, 1000.0);
 
+    nh.param<int>("lio_sam/imuType", imuType, 0);
+    nh.param<float>("lio_sam/imuRate", imuRate, 500.0);
     nh.param<float>("lio_sam/imuAccNoise", imuAccNoise, 0.01);
     nh.param<float>("lio_sam/imuGyrNoise", imuGyrNoise, 0.001);
     nh.param<float>("lio_sam/imuAccBiasN", imuAccBiasN, 0.0002);
@@ -84,14 +95,17 @@ RosBaseNode::RosBaseNode()
     nh.param<float>("lio_sam/surroundingkeyframeAddingAngleThreshold", surroundingkeyframeAddingAngleThreshold, 0.2);
     nh.param<float>("lio_sam/surroundingKeyframeDensity", surroundingKeyframeDensity, 1.0);
     nh.param<float>("lio_sam/surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius, 50.0);
+    nh.param<float>("liorf/surroundingKeyframeMapLeafSize", surroundingKeyframeMapLeafSize, 0.2);
 
     nh.param<bool>("lio_sam/loopClosureEnableFlag", loopClosureEnableFlag, false);
     nh.param<float>("lio_sam/loopClosureFrequency", loopClosureFrequency, 1.0);
+    nh.param<float>("lio_sam/loopClosureICPSurfLeafSize", loopClosureICPSurfLeafSize, 0.3);
     nh.param<int>("lio_sam/surroundingKeyframeSize", surroundingKeyframeSize, 50);
     nh.param<float>("lio_sam/historyKeyframeSearchRadius", historyKeyframeSearchRadius, 10.0);
     nh.param<float>("lio_sam/historyKeyframeSearchTimeDiff", historyKeyframeSearchTimeDiff, 30.0);
     nh.param<int>("lio_sam/historyKeyframeSearchNum", historyKeyframeSearchNum, 25);
     nh.param<float>("lio_sam/historyKeyframeFitnessScore", historyKeyframeFitnessScore, 0.3);
+    nh.param<bool>("lio_sam/enableScanContextLoopClosure", enableScanContextLoopClosure, false);
 
     nh.param<float>("lio_sam/globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius, 1e3);
     nh.param<float>("lio_sam/globalMapVisualizationPoseDensity", globalMapVisualizationPoseDensity, 10.0);
