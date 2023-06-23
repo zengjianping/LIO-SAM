@@ -38,8 +38,6 @@
 #include <mutex>
 using namespace std;
 
-#include <ros/ros.h>
-
 typedef pcl::PointXYZI PointType;
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN };

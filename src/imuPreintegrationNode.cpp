@@ -1,4 +1,5 @@
 #include "nodeUtility.h"
+#include "ImuOdometry.hpp"
 
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
@@ -21,10 +22,12 @@ using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 
 
-class IMUPreintegration : public RosBaseNode
+class IMUPreintegrationNode : public RosBaseNode
 {
 public:
     std::mutex mtx;
+    boost::shared_ptr<ImuOdometryIntegrator> imuOdometryIntegrator;
+    boost::shared_ptr<ImuOdometryOptimizer> imuOdometryOptimizer;
 
     //ros::NodeHandle nh; // 节点句柄
     ros::Subscriber subImu; // 订阅IMU原始数据
@@ -36,87 +39,19 @@ public:
     // imuQueImu用来给imuIntegratorImu_提供数据来源。优化当前激光里程计之后，下一帧激光里程计到来之前的位姿
     std::deque<sensor_msgs::Imu> imuQueImu;
 
-    bool systemInitialized = false; // 标志系统初始化，主要是用来初始化gtsam
-    bool doneFirstOpt = false; // 第一帧初始化标签
-    double lastImuT_imu = -1; // 上一个IMU数据的时间(在IMU的handler中使用)
-    double lastImuT_opt = -1; // 上一个IMU数据的时间（在雷达里程计的handler中使用）
-    const double delta_t = 0; // 在做IMU数据和雷达里程计同步过程中的时间间隔
-    int key = 1;
-    
-    // priorXXXNoise是因子图中添加第一个因子时指定的噪声
-    gtsam::noiseModel::Diagonal::shared_ptr priorPoseNoise;
-    gtsam::noiseModel::Diagonal::shared_ptr priorVelNoise;
-    gtsam::noiseModel::Diagonal::shared_ptr priorBiasNoise;
-    // correctionNoise是小噪声，correctionNoise2是大噪声。在雷达里程计方差大的情况下使用大噪声，反之使用小噪声
-    gtsam::noiseModel::Diagonal::shared_ptr correctionNoise;
-    gtsam::noiseModel::Diagonal::shared_ptr correctionNoise2;
-    // IMU的Bias噪声模型
-    gtsam::Vector noiseModelBetweenBias;
-
-    // imuIntegratorOpt_负责预积分两帧激光里程计之间的IMU数据，计算IMU的bias
-    gtsam::PreintegratedImuMeasurements *imuIntegratorOpt_;
-    // imuIntegratorImu_根据最新的激光里程计，以及后续到到的IMU数据，预测从当前激光里程计往后的位姿（IMU里程计）
-    gtsam::PreintegratedImuMeasurements *imuIntegratorImu_;
-
-    // 因子图优化过程中的状态变量
-    gtsam::Pose3 prevPose_;
-    gtsam::Vector3 prevVel_;
-    gtsam::NavState prevState_;
-    gtsam::imuBias::ConstantBias prevBias_;
-    gtsam::NavState prevStateOdom;
-    gtsam::imuBias::ConstantBias prevBiasOdom;
-
-    gtsam::ISAM2 optimizer; // 因子图优化器
-    gtsam::NonlinearFactorGraph graphFactors; // 非线性因子图
-    gtsam::Values graphValues; // 因子图变量的值
-    
     // T_bl: tramsform points from lidar frame to imu frame 
     gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
     // T_lb: tramsform points from imu frame to lidar frame
     gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
 
-    IMUPreintegration()
+    IMUPreintegrationNode()
     {
-        subImu = nh.subscribe<sensor_msgs::Imu>  (imuTopic, 2000, &IMUPreintegration::imuHandler, this, ros::TransportHints().tcpNoDelay());
-        subOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry_incremental", 5, &IMUPreintegration::odometryHandler, this, ros::TransportHints().tcpNoDelay());
+        subImu = nh.subscribe<sensor_msgs::Imu>  (imuTopic, 2000, &IMUPreintegrationNode::imuHandler, this, ros::TransportHints().tcpNoDelay());
+        subOdometry = nh.subscribe<nav_msgs::Odometry>("lio_sam/mapping/odometry_incremental", 5, &IMUPreintegrationNode::odometryHandler, this, ros::TransportHints().tcpNoDelay());
         pubImuOdometry = nh.advertise<nav_msgs::Odometry> (odomTopic+"_incremental", 2000);
-
-        boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(imuGravity);
-        p->accelerometerCovariance  = gtsam::Matrix33::Identity(3,3) * pow(imuAccNoise, 2); // acc white noise in continuous
-        p->gyroscopeCovariance      = gtsam::Matrix33::Identity(3,3) * pow(imuGyrNoise, 2); // gyro white noise in continuous
-        p->integrationCovariance    = gtsam::Matrix33::Identity(3,3) * pow(1e-4, 2); // error committed in integrating position from velocities
-        gtsam::imuBias::ConstantBias prior_imu_bias((gtsam::Vector(6) << 0, 0, 0, 0, 0, 0).finished());; // assume zero initial bias
-
-        priorPoseNoise  = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1e-2, 1e-2, 1e-2, 1e-2, 1e-2, 1e-2).finished()); // rad,rad,rad,m, m, m
-        priorVelNoise   = gtsam::noiseModel::Isotropic::Sigma(3, 1e4); // m/s
-        priorBiasNoise  = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3); // 1e-2 ~ 1e-3 seems to be good
-        correctionNoise = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 0.05, 0.05, 0.05, 0.1, 0.1, 0.1).finished()); // rad,rad,rad,m, m, m
-        correctionNoise2 = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(6) << 1, 1, 1, 1, 1, 1).finished()); // rad,rad,rad,m, m, m
-        noiseModelBetweenBias = (gtsam::Vector(6) << imuAccBiasN, imuAccBiasN, imuAccBiasN, imuGyrBiasN, imuGyrBiasN, imuGyrBiasN).finished();
         
-        imuIntegratorImu_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for IMU message thread
-        imuIntegratorOpt_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for optimization        
-    }
-
-    void resetOptimization()
-    {
-        gtsam::ISAM2Params optParameters;
-        optParameters.relinearizeThreshold = 0.1;
-        optParameters.relinearizeSkip = 1;
-        optimizer = gtsam::ISAM2(optParameters);
-
-        gtsam::NonlinearFactorGraph newGraphFactors;
-        graphFactors = newGraphFactors;
-
-        gtsam::Values NewGraphValues;
-        graphValues = NewGraphValues;
-    }
-
-    void resetParams()
-    {
-        lastImuT_imu = -1;
-        doneFirstOpt = false;
-        systemInitialized = false;
+        imuOdometryIntegrator.reset(new ImuOdometryIntegrator(*this));
+        imuOdometryOptimizer.reset(new ImuOdometryOptimizer(*this));
     }
 
     void odometryHandler(const nav_msgs::Odometry::ConstPtr& odomMsg)
@@ -380,7 +315,7 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "roboat_loam");
     
-    IMUPreintegration ImuP;
+    IMUPreintegrationNode ImuP;
 
     ROS_INFO("\033[1;32m----> IMU Preintegration Started.\033[0m");
     
