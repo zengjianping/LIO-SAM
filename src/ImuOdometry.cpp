@@ -6,6 +6,12 @@ using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 
 
+ImuSample::ImuSample() :
+    timestamp_(0), linearAcceleration_(0,0,0), angularVelocity_(0,0,0)
+{
+}
+
+
 ImuOdometryIntegrator::ImuOdometryIntegrator(const SystemParameter& params)
 {
     params_ = params;
@@ -27,8 +33,7 @@ bool ImuOdometryIntegrator::reset(const gtsam::imuBias::ConstantBias& prevBias, 
     lastImuTime_ = lastImuTime;
 
     // integrate imu message from the beginning of this optimization
-    for (const ImuSample& imuSample : imuSamples)
-    {
+    for (const ImuSample& imuSample : imuSamples) {
         // pop and integrate imu data that is between two optimizations
         double dt = (lastImuTime_ < 0) ? (1.0 / params_.imuRate) : (imuSample.timestamp_ - lastImuTime_);
         imuIntegrator_->integrateMeasurement(
@@ -40,7 +45,7 @@ bool ImuOdometryIntegrator::reset(const gtsam::imuBias::ConstantBias& prevBias, 
     return true;
 }
 
-gtsam::NavState ImuOdometryIntegrator::process(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const ImuSample& imuSample)
+gtsam::NavState ImuOdometryIntegrator::predict(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const ImuSample& imuSample)
 {
     double dt = (lastImuTime_ < 0) ? (1.0 / params_.imuRate) : (imuSample.timestamp_ - lastImuTime_);
     lastImuTime_ = imuSample.timestamp_;
@@ -105,11 +110,11 @@ void ImuOdometryOptimizer::resetStatus()
     key_ = 1;
 }
 
-bool ImuOdometryOptimizer::process(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples, bool degenerate)
+bool ImuOdometryOptimizer::process(const gtsam::Pose3& imuPose, const std::vector<ImuSample>& imuSamples, bool degenerate)
 {
     if (systemInitialized_ == false) {
         // initialize system
-        return startOptimize(lidarPose);
+        return startOptimize(imuPose, imuSamples);
     }
     
     if (key_ == 100) {
@@ -118,16 +123,20 @@ bool ImuOdometryOptimizer::process(const gtsam::Pose3& lidarPose, const std::vec
     }
 
     // integrate imu data and optimize
-    return processOptimize(lidarPose, imuSamples, degenerate);
+    return processOptimize(imuPose, imuSamples, degenerate);
 }
 
-bool ImuOdometryOptimizer::startOptimize(const gtsam::Pose3& lidarPose)
+bool ImuOdometryOptimizer::startOptimize(const gtsam::Pose3& imuPose, const std::vector<ImuSample>& imuSamples)
 {
+    for (const ImuSample& imuSample : imuSamples) {
+        lastImuTime_ = imuSample.timestamp_;
+    }
+
     // reset graph
     resetGraph();
 
     // initial pose
-    prevPose_ = lidarPose.compose(lidar2Imu_);
+    prevPose_ = imuPose;
     gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise_);
     graphFactors_.add(priorPose);
 
@@ -152,6 +161,9 @@ bool ImuOdometryOptimizer::startOptimize(const gtsam::Pose3& lidarPose)
     graphValues_.clear();
 
     imuIntegrator_->resetIntegrationAndSetBias(prevBias_);
+
+    odomState_ = prevState_;
+    odomBias_  = prevBias_;
     
     key_ = 1;
     systemInitialized_ = true;
@@ -196,10 +208,9 @@ bool ImuOdometryOptimizer::restartOptimize()
     return true;
 }
 
-bool ImuOdometryOptimizer::processOptimize(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples, bool degenerate)
+bool ImuOdometryOptimizer::processOptimize(const gtsam::Pose3& imuPose, const std::vector<ImuSample>& imuSamples, bool degenerate)
 {
-    for (const ImuSample& imuSample : imuSamples)
-    {
+    for (const ImuSample& imuSample : imuSamples) {
         // pop and integrate imu data that is between two optimizations
         double dt = (lastImuTime_ < 0) ? (1.0 / params_.imuRate) : (imuSample.timestamp_ - lastImuTime_);
         imuIntegrator_->integrateMeasurement(
@@ -218,7 +229,7 @@ bool ImuOdometryOptimizer::processOptimize(const gtsam::Pose3& lidarPose, const 
                       gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegrator_->deltaTij()) * noiseModelBetweenBias_)));
 
     // add pose factor
-    gtsam::Pose3 curPose = lidarPose.compose(lidar2Imu_);
+    gtsam::Pose3 curPose = imuPose;
     gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key_), curPose, degenerate ? correctionNoise2_ : correctionNoise_);
     graphFactors_.add(pose_factor);
 
@@ -245,11 +256,12 @@ bool ImuOdometryOptimizer::processOptimize(const gtsam::Pose3& lidarPose, const 
     imuIntegrator_->resetIntegrationAndSetBias(prevBias_);
 
     // check optimization
-    if (failureDetection(prevVel_, prevBias_))
-    {
+    if (failureDetection(prevVel_, prevBias_)) {
         resetStatus();
         return false;
     }
+    odomState_ = prevState_;
+    odomBias_  = prevBias_;
 
     ++key_;
     doneFirstOpt_ = true;
@@ -260,16 +272,14 @@ bool ImuOdometryOptimizer::processOptimize(const gtsam::Pose3& lidarPose, const 
 bool ImuOdometryOptimizer::failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur)
 {
     Eigen::Vector3f vel(velCur.x(), velCur.y(), velCur.z());
-    if (vel.norm() > 30)
-    {
+    if (vel.norm() > 30) {
         ROS_WARN("Large velocity, reset IMU-preintegration!");
         return true;
     }
 
     Eigen::Vector3f ba(biasCur.accelerometer().x(), biasCur.accelerometer().y(), biasCur.accelerometer().z());
     Eigen::Vector3f bg(biasCur.gyroscope().x(), biasCur.gyroscope().y(), biasCur.gyroscope().z());
-    if (ba.norm() > 1.0 || bg.norm() > 1.0)
-    {
+    if (ba.norm() > 1.0 || bg.norm() > 1.0) {
         ROS_WARN("Large bias, reset IMU-preintegration!");
         return true;
     }

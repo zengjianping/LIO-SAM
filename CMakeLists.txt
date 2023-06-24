@@ -114,6 +114,10 @@ target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_utilities B
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp)
 target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
+# IMU Preintegration node
+add_executable(${PROJECT_NAME}_imuPreintegrationNode src/ImuPreintegrationNode.cpp)
+target_link_libraries(${PROJECT_NAME}_imuPreintegrationNode ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+
 # Transform Fusion
 add_executable(${PROJECT_NAME}_transformFusion src/transformFusion.cpp)
 target_link_libraries(${PROJECT_NAME}_transformFusion ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES})

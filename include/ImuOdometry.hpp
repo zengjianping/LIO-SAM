@@ -55,11 +55,6 @@ public:
     Eigen::Vector3d angularVelocity_;
 };
 
-ImuSample::ImuSample() :
-    timestamp_(0), linearAcceleration_(0,0), angularVelocity_(0,0,0)
-{
-}
-
 
 class ImuOdometryIntegrator
 {
@@ -68,7 +63,7 @@ public:
 
 public:
     bool reset(const gtsam::imuBias::ConstantBias& prevBias, const std::vector<ImuSample>& imuSamples=std::vector<ImuSample>(), double lastImuTime=-1);
-    gtsam::NavState process(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const ImuSample& imuSample);
+    gtsam::NavState predict(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const ImuSample& imuSample);
 
 protected:
     SystemParameter params_; // 算法参数
@@ -86,11 +81,14 @@ public:
 
 public:
     bool process(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples, bool degenerate);
+    bool odometryInitialized() {return systemInitialized_;}
+    const gtsam::NavState& getOdomeryState() {return odomState_;}
+    const gtsam::imuBias::ConstantBias& getOdometryBias() {return odomBias_;}
 
 protected:
     void resetGraph();
     void resetStatus();
-    bool startOptimize(const gtsam::Pose3& lidarPose);
+    bool startOptimize(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples);
     bool restartOptimize();
     bool processOptimize(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples, bool degenerate);
     bool failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur);
@@ -102,7 +100,6 @@ protected:
     bool doneFirstOpt_; // 第一帧初始化标签
     double lastImuTime_; // 上一个IMU数据的时间（在雷达里程计的handler中使用）
     int key_; // node key of factor graph
-    const double delta_t = 0; // 在做IMU数据和雷达里程计同步过程中的时间间隔
 
     // 因子图优化
     gtsam::ISAM2 optimizer_; // 因子图优化器
@@ -130,7 +127,7 @@ protected:
     gtsam::Vector3 prevVel_;
     gtsam::NavState prevState_;
     gtsam::imuBias::ConstantBias prevBias_;
-    gtsam::NavState prevStateOdom;
-    gtsam::imuBias::ConstantBias prevBiasOdom;
+    gtsam::NavState odomState_;
+    gtsam::imuBias::ConstantBias odomBias_;
 };
 
