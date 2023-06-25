@@ -6,12 +6,6 @@ using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 
 
-ImuSample::ImuSample() :
-    timestamp_(0), linearAcceleration_(0,0,0), angularVelocity_(0,0,0)
-{
-}
-
-
 ImuOdometryIntegrator::ImuOdometryIntegrator(const SystemParameter& params)
 {
     params_ = params;
@@ -81,9 +75,9 @@ ImuOdometryOptimizer::ImuOdometryOptimizer(const SystemParameter& params)
     float imuAccBiasN = params_.imuAccBiasN, imuGyrBiasN = params_.imuGyrBiasN;
     noiseModelBetweenBias_ = (gtsam::Vector(6) << imuAccBiasN, imuAccBiasN, imuAccBiasN, imuGyrBiasN, imuGyrBiasN, imuGyrBiasN).finished();
 
-    const Eigen::Vector3d& extTrans = params_.extTrans;
-    imu2Lidar_ = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
-    lidar2Imu_ = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    //const Eigen::Vector3d& extTrans = params_.extTrans;
+    //imu2Lidar_ = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
+    //lidar2Imu_ = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
 
     resetStatus();
 }
@@ -273,14 +267,14 @@ bool ImuOdometryOptimizer::failureDetection(const gtsam::Vector3& velCur, const 
 {
     Eigen::Vector3f vel(velCur.x(), velCur.y(), velCur.z());
     if (vel.norm() > 30) {
-        ROS_WARN("Large velocity, reset IMU-preintegration!");
+        cout << "Large velocity, reset IMU-preintegration!" << endl;
         return true;
     }
 
     Eigen::Vector3f ba(biasCur.accelerometer().x(), biasCur.accelerometer().y(), biasCur.accelerometer().z());
     Eigen::Vector3f bg(biasCur.gyroscope().x(), biasCur.gyroscope().y(), biasCur.gyroscope().z());
     if (ba.norm() > 1.0 || bg.norm() > 1.0) {
-        ROS_WARN("Large bias, reset IMU-preintegration!");
+        cout << "Large bias, reset IMU-preintegration!" << endl;
         return true;
     }
 

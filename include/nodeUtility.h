@@ -20,6 +20,8 @@
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
 
+#include <pcl_conversions/pcl_conversions.h>
+
 #include "coreUtility.h"
 
 
@@ -54,7 +56,7 @@ double ROS_TIME(T msg)
 }
 
 template<typename T>
-void imuAngular2rosAngular(sensor_msgs::Imu *thisImuMsg, T *angular_x, T *angular_y, T *angular_z)
+void imuAngular2rosAngular(const sensor_msgs::Imu *thisImuMsg, T *angular_x, T *angular_y, T *angular_z)
 {
     *angular_x = thisImuMsg->angular_velocity.x;
     *angular_y = thisImuMsg->angular_velocity.y;
@@ -62,7 +64,7 @@ void imuAngular2rosAngular(sensor_msgs::Imu *thisImuMsg, T *angular_x, T *angula
 }
 
 template<typename T>
-void imuAccel2rosAccel(sensor_msgs::Imu *thisImuMsg, T *acc_x, T *acc_y, T *acc_z)
+void imuAccel2rosAccel(const sensor_msgs::Imu *thisImuMsg, T *acc_x, T *acc_y, T *acc_z)
 {
     *acc_x = thisImuMsg->linear_acceleration.x;
     *acc_y = thisImuMsg->linear_acceleration.y;
@@ -70,7 +72,7 @@ void imuAccel2rosAccel(sensor_msgs::Imu *thisImuMsg, T *acc_x, T *acc_y, T *acc_
 }
 
 template<typename T>
-void imuRPY2rosRPY(sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)
+void imuRPY2rosRPY(const sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *rosYaw)
 {
     double imuRoll, imuPitch, imuYaw;
     tf::Quaternion orientation;
@@ -81,6 +83,13 @@ void imuRPY2rosRPY(sensor_msgs::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T *ros
     *rosPitch = imuPitch;
     *rosYaw = imuYaw;
 }
+
+ImuSample imuSampleFromSensorMsg(const sensor_msgs::Imu& imuMsg, bool has9axis=false);
+PoseSample poseSampleFromOdometryMsg(const nav_msgs::Odometry& odomMsg);
+
+gtsam::Pose3 gtsamPoseFromOdmetryMsg(const nav_msgs::Odometry::ConstPtr& odomMsg);
+
+Eigen::Affine3f odom2affine(nav_msgs::Odometry odom);
 
 
 #endif // _NODE_UTILITY_H_

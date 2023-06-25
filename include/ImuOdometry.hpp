@@ -1,59 +1,8 @@
 
-#include <Eigen/Core>
-#include <Eigen/Dense>
-
-#include <gtsam/geometry/Rot3.h>
-#include <gtsam/geometry/Pose3.h>
-#include <gtsam/slam/PriorFactor.h>
-#include <gtsam/slam/BetweenFactor.h>
-#include <gtsam/navigation/GPSFactor.h>
-#include <gtsam/navigation/ImuFactor.h>
-#include <gtsam/navigation/CombinedImuFactor.h>
-#include <gtsam/nonlinear/NonlinearFactorGraph.h>
-#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
-#include <gtsam/nonlinear/Marginals.h>
-#include <gtsam/nonlinear/Values.h>
-#include <gtsam/inference/Symbol.h>
-#include <gtsam/nonlinear/ISAM2.h>
-#include <gtsam_unstable/nonlinear/IncrementalFixedLagSmoother.h>
+#ifndef _IMU_ODOMETRY_H_
+#define _IMU_ODOMETRY_H_
 
 #include "coreUtility.h"
-
-
-template<typename T>
-class Point_
-{
-public:
-    Point_() {
-        x_ = T(0);
-        y_ = T(0);
-        z_ = T(0);
-    }
-
-    Point_(T x, T y, T z) {
-        x_ = x;
-        y_ = y;
-        z_ = z;
-    }
-
-public:
-    T x_, y_, z_;
-};
-
-typedef Point_<double> Velocity;
-typedef Point_<double> Acceleration;
-
-
-class ImuSample
-{
-public:
-    ImuSample();
-
-public:
-    double timestamp_;
-    Eigen::Vector3d linearAcceleration_;
-    Eigen::Vector3d angularVelocity_;
-};
 
 
 class ImuOdometryIntegrator
@@ -81,7 +30,7 @@ public:
 
 public:
     bool process(const gtsam::Pose3& lidarPose, const std::vector<ImuSample>& imuSamples, bool degenerate);
-    bool odometryInitialized() {return systemInitialized_;}
+    bool odometryInitialized() {return doneFirstOpt_;}
     const gtsam::NavState& getOdomeryState() {return odomState_;}
     const gtsam::imuBias::ConstantBias& getOdometryBias() {return odomBias_;}
 
@@ -119,8 +68,8 @@ protected:
     // imuIntegrator_负责预积分两帧激光里程计之间的IMU数据，计算IMU的bias
     boost::shared_ptr<gtsam::PreintegratedImuMeasurements> imuIntegrator_;
 
-    gtsam::Pose3 imu2Lidar_; // tramsform points from lidar frame to imu frame
-    gtsam::Pose3 lidar2Imu_; // tramsform points from imu frame to lidar frame
+    //gtsam::Pose3 imu2Lidar_; // tramsform points from lidar frame to imu frame
+    //gtsam::Pose3 lidar2Imu_; // tramsform points from imu frame to lidar frame
 
     // 因子图优化过程中的状态变量
     gtsam::Pose3 prevPose_;
@@ -130,4 +79,7 @@ protected:
     gtsam::NavState odomState_;
     gtsam::imuBias::ConstantBias odomBias_;
 };
+
+#endif // _IMU_ODOMETRY_H_
+
 

@@ -91,18 +91,30 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/nodeUtility.cpp
   src/Scancontext.cpp
   src/ImuOdometry.cpp
+  src/FeatureCalculate.cpp
+  src/LaserScanAdapt.cpp
 )
-target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 # Range Image Projection
 add_executable(${PROJECT_NAME}_imageProjection src/imageProjection.cpp)
 add_dependencies(${PROJECT_NAME}_imageProjection ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_link_libraries(${PROJECT_NAME}_imageProjection ${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
+# Range Image Projection Node
+add_executable(${PROJECT_NAME}_imageProjectionNode src/ImageProjectionNode.cpp)
+add_dependencies(${PROJECT_NAME}_imageProjectionNode ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_link_libraries(${PROJECT_NAME}_imageProjectionNode ${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+
 # Feature Association
 add_executable(${PROJECT_NAME}_featureExtraction src/featureExtraction.cpp)
 add_dependencies(${PROJECT_NAME}_featureExtraction ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
 target_link_libraries(${PROJECT_NAME}_featureExtraction ${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+
+# Feature Association Node
+add_executable(${PROJECT_NAME}_featureExtractionNode src/featureExtractionNode.cpp)
+add_dependencies(${PROJECT_NAME}_featureExtractionNode ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+target_link_libraries(${PROJECT_NAME}_featureExtractionNode ${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
 # Mapping Optimization
 add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp)
@@ -114,11 +126,15 @@ target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_utilities B
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp)
 target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
-# IMU Preintegration node
+# IMU Preintegration Node
 add_executable(${PROJECT_NAME}_imuPreintegrationNode src/ImuPreintegrationNode.cpp)
 target_link_libraries(${PROJECT_NAME}_imuPreintegrationNode ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 # Transform Fusion
 add_executable(${PROJECT_NAME}_transformFusion src/transformFusion.cpp)
 target_link_libraries(${PROJECT_NAME}_transformFusion ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES})
+
+# Transform Fusion Node
+add_executable(${PROJECT_NAME}_transformFusionNode src/TransformFusionNode.cpp)
+target_link_libraries(${PROJECT_NAME}_transformFusionNode ${PROJECT_NAME}_utilities Boost::timer ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 

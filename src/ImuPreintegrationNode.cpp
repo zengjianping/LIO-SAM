@@ -22,30 +22,6 @@ using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 
 
-ImuSample imuSampleFromSensorMsg(const sensor_msgs::Imu& imuMsg)
-{
-    ImuSample imuSample;
-    double imuTime = ROS_TIME(&imuMsg);
-    imuSample.timestamp_ = imuTime;
-    const auto& linear_acceleration = imuMsg.linear_acceleration;
-    imuSample.linearAcceleration_ = Eigen::Vector3d(linear_acceleration.x, linear_acceleration.y, linear_acceleration.z);
-    const auto& angular_velocity = imuMsg.angular_velocity;
-    imuSample.angularVelocity_ = Eigen::Vector3d(angular_velocity.x, angular_velocity.y, angular_velocity.z);
-    return imuSample;
-}
-
-gtsam::Pose3 gtsamPoseFromOdmetryMsg(const nav_msgs::Odometry::ConstPtr& odomMsg)
-{
-    float p_x = odomMsg->pose.pose.position.x;
-    float p_y = odomMsg->pose.pose.position.y;
-    float p_z = odomMsg->pose.pose.position.z;
-    float r_x = odomMsg->pose.pose.orientation.x;
-    float r_y = odomMsg->pose.pose.orientation.y;
-    float r_z = odomMsg->pose.pose.orientation.z;
-    float r_w = odomMsg->pose.pose.orientation.w;
-    return gtsam::Pose3(gtsam::Rot3::Quaternion(r_w, r_x, r_y, r_z), gtsam::Point3(p_x, p_y, p_z));
-}
-
 class IMUPreintegrationNode : public RosBaseNode
 {
 public:
@@ -195,7 +171,7 @@ int main(int argc, char** argv)
     
     IMUPreintegrationNode ImuP;
 
-    ROS_INFO("\033[1;32m----> IMU Preintegration Started.\033[0m");
+    ROS_INFO("\033[1;32m----> IMU Preintegration Node Started.\033[0m");
     
     ros::MultiThreadedSpinner spinner(4);
     spinner.spin();

@@ -147,3 +147,59 @@ sensor_msgs::Imu imuConvertOnLidar(const sensor_msgs::Imu& imu_in, const Eigen::
     return imu_out;
 }
 
+ImuSample imuSampleFromSensorMsg(const sensor_msgs::Imu& imuMsg, bool has9axis)
+{
+    ImuSample imuSample;
+    double imuTime = ROS_TIME(&imuMsg);
+    imuSample.timestamp_ = imuTime;
+    const auto& linear_acceleration = imuMsg.linear_acceleration;
+    imuSample.linearAcceleration_ = Eigen::Vector3d(linear_acceleration.x, linear_acceleration.y, linear_acceleration.z);
+    const auto& angular_velocity = imuMsg.angular_velocity;
+    imuSample.angularVelocity_ = Eigen::Vector3d(angular_velocity.x, angular_velocity.y, angular_velocity.z);
+    if (has9axis) {
+        double roll, pitch, yaw;
+        imuRPY2rosRPY(&imuMsg, &roll, &pitch, &yaw);
+        imuSample.angularRPY_ = Eigen::Vector3d(roll, pitch, yaw);
+    }
+    return imuSample;
+}
+
+PoseSample poseSampleFromOdometryMsg(const nav_msgs::Odometry& odomMsg)
+{
+    PoseSample poseSample;
+    double odomTime = ROS_TIME(&odomMsg);
+    poseSample.timestamp_ = odomTime;
+    poseSample.position_ = Eigen::Vector3d(odomMsg.pose.pose.position.x, odomMsg.pose.pose.position.y, odomMsg.pose.pose.position.z);
+    tf::Quaternion orientation;
+    tf::quaternionMsgToTF(odomMsg.pose.pose.orientation, orientation);
+    double roll, pitch, yaw;
+    tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
+    poseSample.angularRPY_ = Eigen::Vector3d(roll, pitch, yaw);
+    poseSample.covariance_ = odomMsg.pose.covariance;
+    return poseSample;
+}
+
+gtsam::Pose3 gtsamPoseFromOdmetryMsg(const nav_msgs::Odometry::ConstPtr& odomMsg)
+{
+    float p_x = odomMsg->pose.pose.position.x;
+    float p_y = odomMsg->pose.pose.position.y;
+    float p_z = odomMsg->pose.pose.position.z;
+    float r_x = odomMsg->pose.pose.orientation.x;
+    float r_y = odomMsg->pose.pose.orientation.y;
+    float r_z = odomMsg->pose.pose.orientation.z;
+    float r_w = odomMsg->pose.pose.orientation.w;
+    return gtsam::Pose3(gtsam::Rot3::Quaternion(r_w, r_x, r_y, r_z), gtsam::Point3(p_x, p_y, p_z));
+}
+
+Eigen::Affine3f odom2affine(nav_msgs::Odometry odom)
+{
+    double x, y, z, roll, pitch, yaw;
+    x = odom.pose.pose.position.x;
+    y = odom.pose.pose.position.y;
+    z = odom.pose.pose.position.z;
+    tf::Quaternion orientation;
+    tf::quaternionMsgToTF(odom.pose.pose.orientation, orientation);
+    tf::Matrix3x3(orientation).getRPY(roll, pitch, yaw);
+    return pcl::getTransformation(x, y, z, roll, pitch, yaw);
+}
+
