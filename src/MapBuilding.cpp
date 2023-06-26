@@ -496,7 +496,10 @@ bool MapBuilder::processLaserCloud(const PointCloudInfo& _cloudInfo, const std::
         saveKeyFramesAndFactor(gpsSamples);
 
         correctPoses();
+
+        return true;
     }
+    return false;
 }
 
 void MapBuilder::updateInitialGuess()
