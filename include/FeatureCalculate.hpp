@@ -1,4 +1,7 @@
 
+#ifndef _FEATURE_CALCULATE_H_
+#define _FEATURE_CALCULATE_H_
+
 #include "coreUtility.h"
 
 
@@ -36,4 +39,6 @@ protected:
     int *cloudNeighborPicked_; // 特征提取标志，1表示遮挡、平行，或者已经进行了特征提取的点，0表示未进行特征提取
     int *cloudLabel_; // 1表示角点，-1表示平面点，0表示没有被选择为特征点，同样是一个N_SCAN*Horizon_SCAN长的数组
 };
+
+#endif //_FEATURE_CALCULATE_H_
 

@@ -276,7 +276,7 @@ public:
         {
             nav_msgs::Odometry odomMsg = odomQueue[i];
             double currOdomTime = ROS_TIME(&odomMsg);
-            if (currOdomTime > timeScanCur + sync_diff_time)
+            if (currOdomTime > timeScanEnd + sync_diff_time)
                 break;
             PoseSample poseSample = poseSampleFromOdometryMsg(odomMsg);
             poseSamples.push_back(poseSample);
