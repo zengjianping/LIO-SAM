@@ -1,8 +1,8 @@
 
-
 #include "nodeUtility.h"
 #include "lio_sam/cloud_info.h"
 #include "lio_sam/save_map.h"
+#include "MapBuilding.hpp"
 
 #include <GeographicLib/Geocentric.hpp>
 #include <GeographicLib/LocalCartesian.hpp>
@@ -187,6 +187,9 @@ public:
 
     void visualizeLoopClosure()
     {
+        auto& loopIndexContainer = mapBuilder_->loopIndexContainer;
+        auto& copy_cloudKeyPoses6D = mapBuilder_->copy_cloudKeyPoses6D;
+
         if (loopIndexContainer.empty())
             return;
         
@@ -277,6 +280,10 @@ public:
 
     void publishOdometry()
     {
+        auto& transformTobeMapped = mapBuilder_->transformTobeMapped;
+        auto& incrementalOdometryAffineFront = mapBuilder_->incrementalOdometryAffineFront;
+        auto& incrementalOdometryAffineBack = mapBuilder_->incrementalOdometryAffineBack;
+        
         // Publish odometry for ROS (global)
         nav_msgs::Odometry laserOdometryROS;
         laserOdometryROS.header.stamp = timeLaserInfoStamp;
@@ -335,7 +342,7 @@ public:
             laserOdomIncremental.pose.pose.position.y = y;
             laserOdomIncremental.pose.pose.position.z = z;
             laserOdomIncremental.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll, pitch, yaw);
-            if (isDegenerate)
+            if (mapBuilder_->isDegenerate)
                 laserOdomIncremental.pose.covariance[0] = 1;
             else
                 laserOdomIncremental.pose.covariance[0] = 0;
@@ -345,6 +352,14 @@ public:
 
     void publishFrames()
     {
+        auto& transformTobeMapped = mapBuilder_->transformTobeMapped;
+        auto& cloudKeyPoses3D = mapBuilder_->cloudKeyPoses3D;
+        auto& cloudKeyPoses6D = mapBuilder_->cloudKeyPoses6D;
+        auto& laserCloudCornerFromMapDS = mapBuilder_->laserCloudCornerFromMapDS;
+        auto& laserCloudSurfFromMapDS = mapBuilder_->laserCloudSurfFromMapDS;
+        auto& laserCloudCornerLastDS = mapBuilder_->laserCloudCornerLastDS;
+        auto& laserCloudSurfLastDS = mapBuilder_->laserCloudSurfLastDS;
+
         if (cloudKeyPoses3D->points.empty())
             return;
 
@@ -366,9 +381,8 @@ public:
         // publish registered high-res raw cloud
         if (pubCloudRegisteredRaw.getNumSubscribers() != 0) {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-            pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
-            *cloudOut = *transformPointCloud(cloudOut, &thisPose6D);
+            *cloudOut = *transformPointCloud(cloudInfo.extractedCloud, &thisPose6D);
             publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, odometryFrame);
         }
 
@@ -445,6 +459,11 @@ public:
 
     void publishGlobalMap()
     {
+        auto& cloudKeyPoses3D = mapBuilder_->cloudKeyPoses3D;
+        auto& cloudKeyPoses6D = mapBuilder_->cloudKeyPoses6D;
+        auto& cornerCloudKeyFrames = mapBuilder_->cornerCloudKeyFrames;
+        auto& surfCloudKeyFrames = mapBuilder_->surfCloudKeyFrames;
+
         if (pubLaserCloudSurround.getNumSubscribers() == 0)
             return;
 
@@ -461,10 +480,10 @@ public:
         std::vector<int> pointSearchIndGlobalMap;
         std::vector<float> pointSearchSqDisGlobalMap;
         // search near key frames to visualize
-        mtxCloud.lock();
+        //mtxCloud.lock();
         kdtreeGlobalMap->setInputCloud(cloudKeyPoses3D);
         kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
-        mtxCloud.unlock();
+        //mtxCloud.unlock();
 
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
             globalMapKeyPoses->push_back(cloudKeyPoses3D->points[pointSearchIndGlobalMap[i]]);

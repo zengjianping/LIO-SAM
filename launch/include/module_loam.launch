@@ -6,6 +6,6 @@
     <node pkg="$(arg project)" type="$(arg project)_imuPreintegrationNode"   name="$(arg project)_imuPreintegration"    output="screen" 	respawn="true"/>
     <node pkg="$(arg project)" type="$(arg project)_imageProjectionNode"     name="$(arg project)_imageProjection"      output="screen"     respawn="true"/>
     <node pkg="$(arg project)" type="$(arg project)_featureExtractionNode"   name="$(arg project)_featureExtraction"    output="screen"     respawn="true"/>
-    <node pkg="$(arg project)" type="$(arg project)_mapOptmization"      name="$(arg project)_mapOptmization"       output="screen"     respawn="true"/>
+    <node pkg="$(arg project)" type="$(arg project)_mapOptmizationNode"      name="$(arg project)_mapOptmization"       output="screen"     respawn="true"/>
     
 </launch>

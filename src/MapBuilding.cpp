@@ -44,10 +44,10 @@ PointTypePose trans2PointTypePose(float transformIn[])
 MapBuilder::MapBuilder(const SystemParameter& params)
 {
     params_ = params;
-    int mappingCornerLeafSize = params_.mappingCornerLeafSize;
-    int mappingSurfLeafSize = params_.mappingSurfLeafSize;
-    int surroundingKeyframeDensity = params_.surroundingKeyframeDensity;
-    int surroundingKeyframeMapLeafSize = params_.surroundingKeyframeMapLeafSize;
+    float mappingCornerLeafSize = params_.mappingCornerLeafSize;
+    float mappingSurfLeafSize = params_.mappingSurfLeafSize;
+    float surroundingKeyframeDensity = params_.surroundingKeyframeDensity;
+    float surroundingKeyframeMapLeafSize = params_.surroundingKeyframeMapLeafSize;
 
     downSizeFilterCorner.setLeafSize(mappingCornerLeafSize, mappingCornerLeafSize, mappingCornerLeafSize);
     downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
@@ -162,8 +162,8 @@ bool MapBuilder::saveCloudMap(const string& dataDir, float mapResolution)
     int ret = pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap.pcd", *globalMapCloud);
     bool success = ret == 0;
 
-    int mappingCornerLeafSize = params_.mappingCornerLeafSize;
-    int mappingSurfLeafSize = params_.mappingSurfLeafSize;
+    float mappingCornerLeafSize = params_.mappingCornerLeafSize;
+    float mappingSurfLeafSize = params_.mappingSurfLeafSize;
     downSizeFilterCorner.setLeafSize(mappingCornerLeafSize, mappingCornerLeafSize, mappingCornerLeafSize);
     downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
 
