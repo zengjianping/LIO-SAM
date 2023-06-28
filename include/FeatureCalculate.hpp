@@ -2,7 +2,7 @@
 #ifndef _FEATURE_CALCULATE_H_
 #define _FEATURE_CALCULATE_H_
 
-#include "coreUtility.h"
+#include "CoreUtility.hpp"
 
 
 struct SMOOTHNESS

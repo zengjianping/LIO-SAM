@@ -2,7 +2,7 @@
 #ifndef __MAP_BUILDING_H__
 #define __MAP_BUILDING_H__
 
-#include "coreUtility.h"
+#include "CoreUtility.hpp"
 #include "Scancontext.h"
 
 using namespace gtsam;

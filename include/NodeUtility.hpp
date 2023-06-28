@@ -22,7 +22,7 @@
 
 #include <pcl_conversions/pcl_conversions.h>
 
-#include "coreUtility.h"
+#include "CoreUtility.hpp"
 
 
 class RosBaseNode : public SystemParameter

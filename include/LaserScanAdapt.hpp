@@ -2,7 +2,7 @@
 #ifndef __LASERSCAN_ADAPT_H__
 #define __LASERSCAN_ADAPT_H__
 
-#include "coreUtility.h"
+#include "CoreUtility.hpp"
 
 
 struct VelodynePointXYZIRT

@@ -1,4 +1,4 @@
-#include "nodeUtility.h"
+#include "NodeUtility.hpp"
 #include "ImuOdometry.hpp"
 
 #include <gtsam/geometry/Rot3.h>

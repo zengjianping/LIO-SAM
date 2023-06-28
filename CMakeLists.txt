@@ -87,8 +87,8 @@ link_directories(
 
 # Utilities library
 add_library(${PROJECT_NAME}_utilities STATIC
-  src/coreUtility.cpp
-  src/nodeUtility.cpp
+  src/CoreUtility.cpp
+  src/NodeUtility.cpp
   src/Scancontext.cpp
   src/ImuOdometry.cpp
   src/FeatureCalculate.cpp

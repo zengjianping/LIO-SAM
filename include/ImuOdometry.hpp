@@ -2,7 +2,7 @@
 #ifndef _IMU_ODOMETRY_H_
 #define _IMU_ODOMETRY_H_
 
-#include "coreUtility.h"
+#include "CoreUtility.hpp"
 
 
 class ImuOdometryIntegrator
