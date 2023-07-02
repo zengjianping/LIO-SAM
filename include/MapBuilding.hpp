@@ -68,65 +68,38 @@ class MapBuilder
 {
 public:
     MapBuilder(const SystemParameter& params);
-
-    void allocateMemory();
-
     bool saveCloudMap(const string& dataDir, float mapResolution);
-
     void performLoopClosure(std::pair<double,double>* loopInfo);
-
-    void performRSLoopClosure(std::pair<double,double>* loopInfo);
-
-    void performSCLoopClosure();
-
-    bool detectLoopClosureDistance(int *latestID, int *closestID);
-
-    bool detectLoopClosureExternal(std::pair<double,double>* loopInfo, int *latestID, int *closestID);
-
-    void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum, const int loop_index=-1);
-
     bool processLaserCloud(const PointCloudInfo& _cloudInfo, const std::vector<PoseSample>& gpsSamples);
 
+protected:
+    void allocateMemory();
+    void performRSLoopClosure(std::pair<double,double>* loopInfo);
+    void performSCLoopClosure();
+    bool detectLoopClosureDistance(int *latestID, int *closestID);
+    bool detectLoopClosureExternal(std::pair<double,double>* loopInfo, int *latestID, int *closestID);
+    void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum, const int loop_index=-1);
+
     void updateInitialGuess();
-
-    void extractForLoopClosure();
-
     void extractNearby();
-
     void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract);
-
     void extractSurroundingKeyFrames();
-
+    void extractForLoopClosure();
     void downsampleCurrentScan();
-
     void updatePointAssociateToMap();
-
     void pointAssociateToMap(PointType const * const pi, PointType * const po);
-
     void cornerOptimization();
-
     void surfOptimization();
-
     void combineOptimizationCoeffs();
-
     bool LMOptimization(int iterCount);
-
     void scan2MapOptimization();
-
     void transformUpdate();
-
     float constraintTransformation(float value, float limit);
-
     bool saveFrame();
-
     void addOdomFactor();
-
     void addGPSFactor(const std::vector<PoseSample>& gpsSamples);
-
     void addLoopFactor();
-
     void saveKeyFramesAndFactor(const std::vector<PoseSample>& gpsSamples);
-
     void correctPoses();
 
 public:
