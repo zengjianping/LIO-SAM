@@ -907,9 +907,8 @@ bool MapBuilder::LMOptimization(int iterCount)
     cv::Mat matAtB(6, 1, CV_32F, cv::Scalar::all(0));
     cv::Mat matX(6, 1, CV_32F, cv::Scalar::all(0));
 
-    PointType pointOri, coeff;
-
     for (int i = 0; i < laserCloudSelNum; i++) {
+        PointType pointOri, coeff;
         // lidar -> camera
         pointOri.x = laserCloudOri->points[i].y;
         pointOri.y = laserCloudOri->points[i].z;
@@ -923,12 +922,8 @@ bool MapBuilder::LMOptimization(int iterCount)
         float arx = (crx*sry*srz*pointOri.x + crx*crz*sry*pointOri.y - srx*sry*pointOri.z) * coeff.x
                     + (-srx*srz*pointOri.x - crz*srx*pointOri.y - crx*pointOri.z) * coeff.y
                     + (crx*cry*srz*pointOri.x + crx*cry*crz*pointOri.y - cry*srx*pointOri.z) * coeff.z;
-
-        float ary = ((cry*srx*srz - crz*sry)*pointOri.x 
-                    + (sry*srz + cry*crz*srx)*pointOri.y + crx*cry*pointOri.z) * coeff.x
-                    + ((-cry*crz - srx*sry*srz)*pointOri.x 
-                    + (cry*srz - crz*srx*sry)*pointOri.y - crx*sry*pointOri.z) * coeff.z;
-
+        float ary = ((cry*srx*srz - crz*sry)*pointOri.x + (sry*srz + cry*crz*srx)*pointOri.y + crx*cry*pointOri.z) * coeff.x
+                    + ((-cry*crz - srx*sry*srz)*pointOri.x + (cry*srz - crz*srx*sry)*pointOri.y - crx*sry*pointOri.z) * coeff.z;
         float arz = ((crz*srx*sry - cry*srz)*pointOri.x + (-cry*crz-srx*sry*srz)*pointOri.y)*coeff.x
                     + (crx*crz*pointOri.x - crx*srz*pointOri.y) * coeff.y
                     + ((sry*srz + cry*crz*srx)*pointOri.x + (crz*sry-cry*srx*srz)*pointOri.y)*coeff.z;

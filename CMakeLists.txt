@@ -94,6 +94,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/FeatureCalculate.cpp
   src/LaserScanAdapt.cpp
   src/MapBuilding.cpp
+  src/LaserFeatureRegister.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
