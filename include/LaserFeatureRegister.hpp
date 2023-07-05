@@ -51,6 +51,11 @@ public:
 
     struct Options {
         int maxIterCount = 10;
+        int minFeatureNum = 50;
+        int ceresDerivative = 0; // 0: automatic, 1: analytic
+        bool undistortScan = false;
+        double scanPeriod = 0.1;
+        bool featureMatchMethod = 0; // 0: fit, 1: search
     };
 
     static LaserFeatureRegistration* createInstance(Type type, const Options& options);
@@ -65,21 +70,34 @@ public:
     bool process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose);
 
 protected:
-    virtual void setInitPose(const Eigen::Isometry3d& initPose) = 0;
-    virtual bool getFinalPose(Eigen::Isometry3d& finalPose) = 0;
-    virtual void pointAssociateToMap(const pcl::PointXYZI& inp, pcl::PointXYZI& outp) = 0;
+    virtual bool preprocess(const Eigen::Isometry3d& initPose);
+    virtual bool postprocess(Eigen::Isometry3d& finalPose);
+    virtual void transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp) = 0;
     virtual bool prepareProcessing() = 0;
     void processEdgeFeatureCloud();
-    bool matchOneEdgeFeature(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+    bool matchOneEdgeFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB);
-    virtual void addOneEdgeFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB) = 0;
+    bool matchOneEdgeFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+        Eigen::Vector3d& lineNorm, Eigen::Vector3d& centPoint);
+    virtual void addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint) = 0;
     void processSurfFeatureCloud();
-    bool matchOneSurfFeature(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+    bool matchOneSurfFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+        Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB, Eigen::Vector3d& lastPointC);
+    virtual void addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC) = 0;
+    bool matchOneSurfFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& planeNorm, double& planeIntercept);
-    virtual void addOneSurfFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept) = 0;
-    virtual bool solveOptimProblem(int iterCount, bool& converged) = 0;
+    virtual bool solveOptimProblem(int iterCount) = 0;
+
+protected:
+    Eigen::Isometry3d getFinalPose() { return finalPose_; }
+    bool getPoseConverged() { return poseConverged_; }
+    bool getPoseDegenerated() { return poseDegenerated_; }
 
 protected:
     Options options_;
@@ -89,6 +107,9 @@ protected:
     pcl::PointCloud<pcl::PointXYZI>::Ptr surfCloudLast_;
     pcl::KdTreeFLANN<pcl::PointXYZI>::Ptr kdtreeEdgeCloud_;
     pcl::KdTreeFLANN<pcl::PointXYZI>::Ptr kdtreeSurfCloud_;
+    Eigen::Isometry3d finalPose_ = Eigen::Isometry3d::Identity();
+    bool poseConverged_ = true;
+    bool poseDegenerated_ = false;
 };
 
 #endif // __LASER_FEATURE_REGISTER_H__

@@ -35,26 +35,41 @@ void LaserFeatureRegistration::setSurfFeatureCloud(const pcl::PointCloud<pcl::Po
 
 bool LaserFeatureRegistration::process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose)
 {
-    bool converged = false;
-
-    setInitPose(initPose);
+    if (!preprocess(initPose)) {
+        return false;
+    }
 
     for (int iterCount=0; iterCount < options_.maxIterCount; iterCount++) {
-        prepareProcessing();
+        if (!prepareProcessing()) {
+            return false;
+        }
 
         processEdgeFeatureCloud();
-
         processSurfFeatureCloud();
 
-        if (solveOptimProblem(iterCount, converged)) {
-            if (converged)
+        if (solveOptimProblem(iterCount)) {
+            if (poseConverged_)
                 break;
         } else {
             return false;
         }
     }
 
-    return getFinalPose(finalPose);
+    return postprocess(finalPose);
+}
+
+bool LaserFeatureRegistration::preprocess(const Eigen::Isometry3d& initPose)
+{
+    finalPose_ = Eigen::Isometry3d::Identity();
+    poseConverged_ = false;
+    poseDegenerated_ = false;
+    return true;
+}
+
+bool LaserFeatureRegistration::postprocess(Eigen::Isometry3d& finalPose)
+{
+    finalPose_ = finalPose;
+    return true;
 }
 
 void LaserFeatureRegistration::processEdgeFeatureCloud()
@@ -63,27 +78,114 @@ void LaserFeatureRegistration::processEdgeFeatureCloud()
     int numValids = 0;
 
     for (int i = 0; i < numFeatures; i++) {
-        Eigen::Vector3d currPoint, lastPointA, lastPointB;
-        pcl::PointXYZI pointOri = edgeCloudCurr_->points[i], pointSel;
-        bool res = matchOneEdgeFeature(pointOri, pointSel, currPoint, lastPointA, lastPointB);
-        if (res) {
-            addOneEdgeFeature(pointOri, pointSel, currPoint, lastPointA, lastPointB);
-            numValids++;
+        const pcl::PointXYZI& pointOri = edgeCloudCurr_->points[i];
+        pcl::PointXYZI pointSel;
+        Eigen::Vector3d currPoint;
+
+        if (options_.featureMatchMethod == 1) {
+            Eigen::Vector3d lastPointA, lastPointB;
+            bool res = matchOneEdgeFeatureS(pointOri, pointSel, currPoint, lastPointA, lastPointB);
+            if (res) {
+                addOneEdgeFeatureS(pointOri, pointSel, currPoint, lastPointA, lastPointB);
+                numValids++;
+            }
+        } else {
+            Eigen::Vector3d lineNorm, centPoint;
+            bool res = matchOneEdgeFeatureF(pointOri, pointSel, currPoint, lineNorm, centPoint);
+            if (res) {
+                addOneEdgeFeatureF(pointOri, pointSel, currPoint, lineNorm, centPoint);
+                numValids++;
+            }
         }
     }
 }
 
-bool LaserFeatureRegistration::matchOneEdgeFeature(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+constexpr double DISTANCE_SQ_THRESHOLD = 25;
+constexpr double NEARBY_SCAN = 2.5;
+
+bool LaserFeatureRegistration::matchOneEdgeFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB)
 {
     std::vector<int> pointSearchInd;
     std::vector<float> pointSearchSqDis;
-    pointAssociateToMap(pointOri, pointSel);
+    transformPointToLast(pointOri, pointSel);
+    kdtreeEdgeCloud_->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
+
+    if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD) {
+        int closestPointInd = -1, minPointInd2 = -1;
+        closestPointInd = pointSearchInd[0];
+        int closestPointScanID = int(edgeCloudLast_->points[closestPointInd].intensity);
+        double minPointSqDis2 = DISTANCE_SQ_THRESHOLD;
+    
+        // search in the direction of increasing scan line
+        for (int j = closestPointInd + 1; j < (int)edgeCloudLast_->points.size(); ++j) {
+            const pcl::PointXYZI& point = edgeCloudLast_->points[j];
+
+            // if in the same scan line, continue
+            if (int(point.intensity) <= closestPointScanID)
+                continue;
+            // if not in nearby scans, end the loop
+            if (int(point.intensity) > (closestPointScanID + NEARBY_SCAN))
+                break;
+
+            double pointSqDis = (point.x - pointSel.x) * (point.x - pointSel.x) +
+                                (point.y - pointSel.y) * (point.y - pointSel.y) +
+                                (point.z - pointSel.z) * (point.z - pointSel.z);
+
+            if (pointSqDis < minPointSqDis2) {
+                // find nearer point
+                minPointSqDis2 = pointSqDis;
+                minPointInd2 = j;
+            }
+        }
+
+        // search in the direction of decreasing scan line
+        for (int j = closestPointInd - 1; j >= 0; --j) {
+            const pcl::PointXYZI& point = edgeCloudLast_->points[j];
+
+            // if in the same scan line, continue
+            if (int(point.intensity) >= closestPointScanID)
+                continue;
+            // if not in nearby scans, end the loop
+            if (int(point.intensity) < (closestPointScanID - NEARBY_SCAN))
+                break;
+
+            double pointSqDis = (point.x - pointSel.x) * (point.x - pointSel.x) +
+                                (point.y - pointSel.y) * (point.y - pointSel.y) +
+                                (point.z - pointSel.z) * (point.z - pointSel.z);
+
+            if (pointSqDis < minPointSqDis2) {
+                // find nearer point
+                minPointSqDis2 = pointSqDis;
+                minPointInd2 = j;
+            }
+        }
+
+        // both closestPointInd and minPointInd2 is valid
+        if (minPointInd2 >= 0) {
+            const pcl::PointXYZI& pointA = edgeCloudLast_->points[closestPointInd];
+            const pcl::PointXYZI& pointB = edgeCloudLast_->points[minPointInd2];
+            currPoint = Eigen::Vector3d(pointOri.x, pointOri.y, pointOri.z);
+            lastPointA = Eigen::Vector3d(pointA.x, pointA.y, pointA.z);
+            lastPointB = Eigen::Vector3d (pointB.x, pointB.y, pointB.z);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool LaserFeatureRegistration::matchOneEdgeFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+        Eigen::Vector3d& lineNorm, Eigen::Vector3d& centPoint)
+{
+    std::vector<int> pointSearchInd;
+    std::vector<float> pointSearchSqDis;
+    transformPointToLast(pointOri, pointSel);
     kdtreeEdgeCloud_->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
 
     if (pointSearchSqDis[4] < 1.0) {
         std::vector<Eigen::Vector3d> nearEdges;
-        Eigen::Vector3d centPoint(0, 0, 0);
+        centPoint = Eigen::Vector3d(0, 0, 0);
         for (int j = 0; j < 5; j++) {
             const pcl::PointXYZI& point = edgeCloudLast_->points[pointSearchInd[j]];
             Eigen::Vector3d nearEdge(point.x, point.y, point.z);
@@ -101,10 +203,8 @@ bool LaserFeatureRegistration::matchOneEdgeFeature(const pcl::PointXYZI& pointOr
 
         // if is indeed line feature, note Eigen library sort eigenvalues in increasing order
         if (saes.eigenvalues()[2] > 3 * saes.eigenvalues()[1]) {
-            Eigen::Vector3d unitDirection = saes.eigenvectors().col(2);
+            lineNorm = saes.eigenvectors().col(2);
             currPoint = Eigen::Vector3d(pointOri.x, pointOri.y, pointOri.z);
-            lastPointA = 0.1 * unitDirection + centPoint;
-            lastPointB = -0.1 * unitDirection + centPoint;
             return true;
         }
     }
@@ -118,23 +218,116 @@ void LaserFeatureRegistration::processSurfFeatureCloud()
     int numValids = 0;
 
     for (int i = 0; i < numFeatures; i++) {
-        Eigen::Vector3d currPoint, planeNorm;
-        double planeIntercept = 0;
-        pcl::PointXYZI pointOri = surfCloudCurr_->points[i], pointSel;
-        bool res = matchOneSurfFeature(pointOri, pointSel, currPoint, planeNorm, planeIntercept);
-        if (res) {
-            addOneSurfFeature(pointOri, pointSel, currPoint, planeNorm, planeIntercept);
-            numValids++;
+        const pcl::PointXYZI& pointOri = surfCloudCurr_->points[i];
+        pcl::PointXYZI pointSel;
+        Eigen::Vector3d currPoint;
+
+        if (options_.featureMatchMethod == 1) {
+            Eigen::Vector3d lastPointA, lastPointB, lastPointC;
+            bool res = matchOneSurfFeatureS(pointOri, pointSel, currPoint, lastPointA, lastPointB, lastPointC);
+            if (res) {
+                addOneSurfFeatureS(pointOri, pointSel, currPoint, lastPointA, lastPointB, lastPointC);
+                numValids++;
+            }
+        } else {
+            Eigen::Vector3d planeNorm;
+            double planeIntercept = 0;
+            bool res = matchOneSurfFeatureF(pointOri, pointSel, currPoint, planeNorm, planeIntercept);
+            if (res) {
+                addOneSurfFeatureF(pointOri, pointSel, currPoint, planeNorm, planeIntercept);
+                numValids++;
+            }
         }
     }
 }
 
-bool LaserFeatureRegistration::matchOneSurfFeature(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+bool LaserFeatureRegistration::matchOneSurfFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+    Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB, Eigen::Vector3d& lastPointC)
+{
+    std::vector<int> pointSearchInd;
+    std::vector<float> pointSearchSqDis;
+    transformPointToLast(pointOri, pointSel);
+    kdtreeSurfCloud_->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
+
+    if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD)
+    {
+        int closestPointInd = -1, minPointInd2 = -1, minPointInd3 = -1;
+        closestPointInd = pointSearchInd[0];
+
+        // get closest point's scan ID
+        int closestPointScanID = int(surfCloudLast_->points[closestPointInd].intensity);
+        double minPointSqDis2 = DISTANCE_SQ_THRESHOLD, minPointSqDis3 = DISTANCE_SQ_THRESHOLD;
+
+        // search in the direction of increasing scan line
+        for (int j = closestPointInd + 1; j < (int)surfCloudLast_->points.size(); ++j) {
+            const pcl::PointXYZI& point = surfCloudLast_->points[j];
+
+            // if not in nearby scans, end the loop
+            if (int(point.intensity) > (closestPointScanID + NEARBY_SCAN))
+                break;
+
+            double pointSqDis = (point.x - pointSel.x) * (point.x - pointSel.x) +
+                                (point.y - pointSel.y) * (point.y - pointSel.y) +
+                                (point.z - pointSel.z) * (point.z - pointSel.z);
+
+            // if in the same or lower scan line
+            if (int(point.intensity) <= closestPointScanID && pointSqDis < minPointSqDis2) {
+                minPointSqDis2 = pointSqDis;
+                minPointInd2 = j;
+            }
+            // if in the higher scan line
+            else if (int(point.intensity) > closestPointScanID && pointSqDis < minPointSqDis3) {
+                minPointSqDis3 = pointSqDis;
+                minPointInd3 = j;
+            }
+        }
+
+        // search in the direction of decreasing scan line
+        for (int j = closestPointInd - 1; j >= 0; --j)
+        {
+            const pcl::PointXYZI& point = surfCloudLast_->points[j];
+
+            // if not in nearby scans, end the loop
+            if (int(point.intensity) < (closestPointScanID - NEARBY_SCAN))
+                break;
+
+            double pointSqDis = (point.x - pointSel.x) * (point.x - pointSel.x) +
+                                (point.y - pointSel.y) * (point.y - pointSel.y) +
+                                (point.z - pointSel.z) * (point.z - pointSel.z);
+
+            // if in the same or higher scan line
+            if (int(point.intensity) >= closestPointScanID && pointSqDis < minPointSqDis2) {
+                minPointSqDis2 = pointSqDis;
+                minPointInd2 = j;
+            }
+            else if (int(point.intensity) < closestPointScanID && pointSqDis < minPointSqDis3) {
+                // find nearer point
+                minPointSqDis3 = pointSqDis;
+                minPointInd3 = j;
+            }
+        }
+
+        if (minPointInd2 >= 0 && minPointInd3 >= 0) {
+            const pcl::PointXYZI& pointA = surfCloudLast_->points[closestPointInd];
+            const pcl::PointXYZI& pointB = surfCloudLast_->points[minPointInd2];
+            const pcl::PointXYZI& pointC = surfCloudLast_->points[minPointInd3];
+            currPoint = Eigen::Vector3d(pointOri.x, pointOri.y, pointOri.z);
+            lastPointA = Eigen::Vector3d(pointA.x, pointA.y, pointA.z);
+            lastPointB = Eigen::Vector3d (pointB.x, pointB.y, pointB.z);
+            lastPointC = Eigen::Vector3d (pointC.x, pointC.y, pointC.z);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool LaserFeatureRegistration::matchOneSurfFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& planeNorm, double& planeIntercept)
 {
     std::vector<int> pointSearchInd;
     std::vector<float> pointSearchSqDis;
-    pointAssociateToMap(pointOri, pointSel);
+    transformPointToLast(pointOri, pointSel);
     kdtreeSurfCloud_->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
 
     Eigen::Matrix<double, 5, 3> matA0;
@@ -187,15 +380,19 @@ public:
     virtual ~LaserFeatureRegistrationCeres();
 
 protected:
-    virtual void setInitPose(const Eigen::Isometry3d& initPose);
-    virtual bool getFinalPose(Eigen::Isometry3d& finalPose);
-    virtual void pointAssociateToMap(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
+    virtual bool preprocess(const Eigen::Isometry3d& initPose);
+    virtual bool postprocess(Eigen::Isometry3d& finalPose);
+    virtual void transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
     virtual bool prepareProcessing();
-    virtual void addOneEdgeFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB);
-    virtual void addOneSurfFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint);
+    virtual void addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC);
+    virtual void addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept);
-    virtual bool solveOptimProblem(int iterCount, bool& converged);
+    virtual bool solveOptimProblem(int iterCount);
 
 protected:
     double parameters_[7] = {0, 0, 0, 1, 0, 0, 0};
@@ -492,24 +689,39 @@ LaserFeatureRegistrationCeres::~LaserFeatureRegistrationCeres()
 {
 }
 
-void LaserFeatureRegistrationCeres::setInitPose(const Eigen::Isometry3d& initPose)
+bool LaserFeatureRegistrationCeres::preprocess(const Eigen::Isometry3d& initPose)
 {
+    if (!LaserFeatureRegistration::preprocess(initPose)) {
+        return false;
+    }
+
     quaterCurr2Last_ = Eigen::Quaterniond(initPose.rotation());
     transCurr2Last_ = initPose.translation();
+
+    return true;
 }
 
-bool LaserFeatureRegistrationCeres::getFinalPose(Eigen::Isometry3d& finalPose)
+bool LaserFeatureRegistrationCeres::postprocess(Eigen::Isometry3d& finalPose)
 {
     finalPose = Eigen::Isometry3d::Identity();
     finalPose.linear() = quaterCurr2Last_.toRotationMatrix();
     finalPose.translation() = transCurr2Last_;
-    return true;
+
+    return LaserFeatureRegistration::postprocess(finalPose);
 }
 
-void LaserFeatureRegistrationCeres::pointAssociateToMap(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
+void LaserFeatureRegistrationCeres::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
 {
+    Eigen::Quaterniond quaterPoint2Last = quaterCurr2Last_;
+    Eigen::Vector3d transPoint2Last = transCurr2Last_;
+    if (options_.undistortScan) {
+        double s = (inp.intensity - int(inp.intensity)) / options_.scanPeriod;
+        Eigen::Quaterniond quaterIdentity = Eigen::Quaterniond::Identity();
+        quaterPoint2Last = quaterIdentity.slerp(s, quaterCurr2Last_);
+        transPoint2Last = s * transCurr2Last_;
+    }
 	Eigen::Vector3d inPoint(inp.x, inp.y, inp.z);
-	Eigen::Vector3d outPoint = quaterCurr2Last_ * inPoint + transCurr2Last_;
+	Eigen::Vector3d outPoint = quaterPoint2Last * inPoint + transPoint2Last;
 	outp.x = outPoint.x();
 	outp.y = outPoint.y();
 	outp.z = outPoint.z();
@@ -522,27 +734,79 @@ bool LaserFeatureRegistrationCeres::prepareProcessing()
     problem_options.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
     problem_.reset(new ceres::Problem(problem_options));
     lossFunction_.reset(new ceres::HuberLoss(0.1));
-    ceres::LocalParameterization *q_parameterization = new ceres::EigenQuaternionParameterization();
-    problem_->AddParameterBlock(parameters_, 4, q_parameterization);
-    problem_->AddParameterBlock(parameters_ + 4, 3);
+
+    if (options_.ceresDerivative == 1) {
+        ceres::LocalParameterization *q_parameterization = new PoseSE3Parameterization();
+        problem_->AddParameterBlock(parameters_, 7, q_parameterization);
+    } else {
+        ceres::LocalParameterization *q_parameterization = new ceres::EigenQuaternionParameterization();
+        problem_->AddParameterBlock(parameters_, 4, q_parameterization);
+        problem_->AddParameterBlock(parameters_ + 4, 3);
+    }
+
     return true;
 }
 
-void LaserFeatureRegistrationCeres::addOneEdgeFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserFeatureRegistrationCeres::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB)
 {
-    ceres::CostFunction *costFunction = LaserEdgeFeatureFunctor::Create(currPoint, lastPointA, lastPointB, 1.0);
-    problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    double s = 1.0;
+    if (options_.undistortScan) {
+        s = (pointOri.intensity - int(pointOri.intensity)) / options_.scanPeriod;
+    }
+
+    if (options_.ceresDerivative == 1) {
+        ceres::CostFunction *costFunction = new EdgeAnalyticCostFunction(currPoint, lastPointA, lastPointB);  
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_);
+    } else {
+        ceres::CostFunction *costFunction = LaserEdgeFeatureFunctor::Create(currPoint, lastPointA, lastPointB, s);
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    }
 }
 
-void LaserFeatureRegistrationCeres::addOneSurfFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserFeatureRegistrationCeres::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint)
+{
+    Eigen::Vector3d lastPointA = 0.1 * lineNorm + centPoint;
+    Eigen::Vector3d lastPointB = -0.1 * lineNorm + centPoint;
+
+    if (options_.ceresDerivative == 1) {
+        ceres::CostFunction *costFunction = new EdgeAnalyticCostFunction(currPoint, lastPointA, lastPointB);  
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_);
+    } else {
+        ceres::CostFunction *costFunction = LaserEdgeFeatureFunctor::Create(currPoint, lastPointA, lastPointB, 1.0);
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    }
+}
+
+void LaserFeatureRegistrationCeres::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC)
+{
+    double s = 1.0;
+    if (options_.undistortScan) {
+        s = (pointOri.intensity - int(pointOri.intensity)) / options_.scanPeriod;
+    }
+
+    if (options_.ceresDerivative == 1) {
+    } else {
+        ceres::CostFunction *costFunction = LaserSurfFeatureFunctor::Create(currPoint, lastPointA, lastPointB, lastPointC, s);
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    }
+}
+
+void LaserFeatureRegistrationCeres::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept)
 {
-    ceres::CostFunction *costFunction = LaserSurfNormFeatureFunctor::Create(currPoint, planeNorm, planeIntercept);
-    problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    if (options_.ceresDerivative == 1) {
+        ceres::CostFunction *costFunction = new SurfNormAnalyticCostFunction(currPoint, planeNorm, planeIntercept);    
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_);
+    } else {
+        ceres::CostFunction *costFunction = LaserSurfNormFeatureFunctor::Create(currPoint, planeNorm, planeIntercept);
+        problem_->AddResidualBlock(costFunction, lossFunction_.get(), parameters_, parameters_ + 4);
+    }
 }
 
-bool LaserFeatureRegistrationCeres::solveOptimProblem(int iterCount, bool& converged)
+bool LaserFeatureRegistrationCeres::solveOptimProblem(int iterCount)
 {
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
@@ -552,6 +816,7 @@ bool LaserFeatureRegistrationCeres::solveOptimProblem(int iterCount, bool& conve
     options.gradient_check_relative_precision = 1e-4;
     ceres::Solver::Summary summary;
     ceres::Solve(options, problem_.get(), &summary);
+
     return true;
 }
 
@@ -566,22 +831,25 @@ public:
     virtual ~LaserFeatureRegistrationNewton();
 
 protected:
-    virtual void setInitPose(const Eigen::Isometry3d& initPose);
-    virtual bool getFinalPose(Eigen::Isometry3d& finalPose);
-    virtual void pointAssociateToMap(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
+    virtual bool preprocess(const Eigen::Isometry3d& initPose);
+    virtual bool postprocess(Eigen::Isometry3d& finalPose);
+    virtual void transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
     virtual bool prepareProcessing();
-    virtual void addOneEdgeFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB);
-    virtual void addOneSurfFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+    virtual void addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint);
+    virtual void addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC);
+    virtual void addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept);
-    virtual bool solveOptimProblem(int iterCount, bool& converged);
+    virtual bool solveOptimProblem(int iterCount);
 
 protected:
-    float transformTobeMapped[6] = {0, 0, 0, 0, 0, 0};
-    Eigen::Affine3f transPointAssociateToMap;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr laserCloudOri;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr coeffSel;
-    bool isDegenerate = false;
+    float transformTobeMapped_[6] = {0, 0, 0, 0, 0, 0};
+    Eigen::Affine3f transPointAssociateToMap_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr laserCloudOri_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr coeffSel_;
 };
 
 
@@ -607,42 +875,57 @@ LaserFeatureRegistrationNewton::~LaserFeatureRegistrationNewton()
 {
 }
 
-void LaserFeatureRegistrationNewton::setInitPose(const Eigen::Isometry3d& initPose)
+bool LaserFeatureRegistrationNewton::preprocess(const Eigen::Isometry3d& initPose)
 {
+    if (!LaserFeatureRegistration::preprocess(initPose)) {
+        return false;
+    }
+
     Eigen::Affine3f affinePose = Eigen::Affine3f::Identity();
     affinePose.linear() = initPose.rotation().cast<float>();
     affinePose.translation() = initPose.translation().cast<float>();
-    affine3fToTrans(affinePose, transformTobeMapped);
-}
-
-bool LaserFeatureRegistrationNewton::getFinalPose(Eigen::Isometry3d& finalPose)
-{
-    Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped);
-    finalPose = Eigen::Isometry3d::Identity();
-    finalPose.linear() = affinePose.rotation().cast<double>();
-    finalPose.translation() = affinePose.translation().cast<double>();
+    affine3fToTrans(affinePose, transformTobeMapped_);
+    
     return true;
 }
 
-void LaserFeatureRegistrationNewton::pointAssociateToMap(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
+bool LaserFeatureRegistrationNewton::postprocess(Eigen::Isometry3d& finalPose)
 {
-    outp.x = transPointAssociateToMap(0,0) * inp.x + transPointAssociateToMap(0,1) * inp.y + transPointAssociateToMap(0,2) * inp.z + transPointAssociateToMap(0,3);
-    outp.y = transPointAssociateToMap(1,0) * inp.x + transPointAssociateToMap(1,1) * inp.y + transPointAssociateToMap(1,2) * inp.z + transPointAssociateToMap(1,3);
-    outp.z = transPointAssociateToMap(2,0) * inp.x + transPointAssociateToMap(2,1) * inp.y + transPointAssociateToMap(2,2) * inp.z + transPointAssociateToMap(2,3);
+    Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
+    finalPose = Eigen::Isometry3d::Identity();
+    finalPose.linear() = affinePose.rotation().cast<double>();
+    finalPose.translation() = affinePose.translation().cast<double>();
+
+    return LaserFeatureRegistration::postprocess(finalPose);
+}
+
+void LaserFeatureRegistrationNewton::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
+{
+    outp.x = transPointAssociateToMap_(0,0) * inp.x + transPointAssociateToMap_(0,1) * inp.y + transPointAssociateToMap_(0,2) * inp.z + transPointAssociateToMap_(0,3);
+    outp.y = transPointAssociateToMap_(1,0) * inp.x + transPointAssociateToMap_(1,1) * inp.y + transPointAssociateToMap_(1,2) * inp.z + transPointAssociateToMap_(1,3);
+    outp.z = transPointAssociateToMap_(2,0) * inp.x + transPointAssociateToMap_(2,1) * inp.y + transPointAssociateToMap_(2,2) * inp.z + transPointAssociateToMap_(2,3);
 	outp.intensity = inp.intensity;
 }
 
 bool LaserFeatureRegistrationNewton::prepareProcessing()
 {
-    transPointAssociateToMap = transToAffine3f(transformTobeMapped);
-    laserCloudOri->clear();
-    coeffSel->clear();
+    transPointAssociateToMap_ = transToAffine3f(transformTobeMapped_);
+    laserCloudOri_->clear();
+    coeffSel_->clear();
     return true;
 }
 
-void LaserFeatureRegistrationNewton::addOneEdgeFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserFeatureRegistrationNewton::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB)
 {
+}
+
+void LaserFeatureRegistrationNewton::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint)
+{
+    Eigen::Vector3d lastPointA = 0.1 * lineNorm + centPoint;
+    Eigen::Vector3d lastPointB = -0.1 * lineNorm + centPoint;
+
     float x0 = pointSel.x;
     float y0 = pointSel.y;
     float z0 = pointSel.z;
@@ -673,12 +956,17 @@ void LaserFeatureRegistrationNewton::addOneEdgeFeature(const pcl::PointXYZI& poi
     coeff.intensity = s * ld2;
 
     if (s > 0.1) {
-        laserCloudOri->push_back(pointOri);
-        coeffSel->push_back(coeff);
+        laserCloudOri_->push_back(pointOri);
+        coeffSel_->push_back(coeff);
     }
 }
 
-void LaserFeatureRegistrationNewton::addOneSurfFeature(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserFeatureRegistrationNewton::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+        const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC)
+{
+}
+
+void LaserFeatureRegistrationNewton::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept)
 {
     double pa = planeNorm.x();
@@ -696,12 +984,12 @@ void LaserFeatureRegistrationNewton::addOneSurfFeature(const pcl::PointXYZI& poi
     coeff.intensity = s * pd2;
 
     if (s > 0.1) {
-        laserCloudOri->push_back(pointOri);
-        coeffSel->push_back(coeff);
+        laserCloudOri_->push_back(pointOri);
+        coeffSel_->push_back(coeff);
     }
 }
 
-bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& converged)
+bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount)
 {
     // This optimization is from the original loam_velodyne by Ji Zhang, need to cope with coordinate transformation
     // lidar <- camera      ---     camera <- lidar
@@ -713,15 +1001,15 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& conv
     // yaw = pitch          ---     yaw = roll
 
     // lidar -> camera
-    float srx = sin(transformTobeMapped[1]);
-    float crx = cos(transformTobeMapped[1]);
-    float sry = sin(transformTobeMapped[2]);
-    float cry = cos(transformTobeMapped[2]);
-    float srz = sin(transformTobeMapped[0]);
-    float crz = cos(transformTobeMapped[0]);
+    float srx = sin(transformTobeMapped_[1]);
+    float crx = cos(transformTobeMapped_[1]);
+    float sry = sin(transformTobeMapped_[2]);
+    float cry = cos(transformTobeMapped_[2]);
+    float srz = sin(transformTobeMapped_[0]);
+    float crz = cos(transformTobeMapped_[0]);
 
-    int laserCloudSelNum = laserCloudOri->size();
-    if (laserCloudSelNum < 50) {
+    int laserCloudSelNum = laserCloudOri_->size();
+    if (laserCloudSelNum < options_.minFeatureNum) {
         return false;
     }
 
@@ -735,14 +1023,14 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& conv
     for (int i = 0; i < laserCloudSelNum; i++) {
         pcl::PointXYZI pointOri, coeff;
         // lidar -> camera
-        pointOri.x = laserCloudOri->points[i].y;
-        pointOri.y = laserCloudOri->points[i].z;
-        pointOri.z = laserCloudOri->points[i].x;
+        pointOri.x = laserCloudOri_->points[i].y;
+        pointOri.y = laserCloudOri_->points[i].z;
+        pointOri.z = laserCloudOri_->points[i].x;
         // lidar -> camera
-        coeff.x = coeffSel->points[i].y;
-        coeff.y = coeffSel->points[i].z;
-        coeff.z = coeffSel->points[i].x;
-        coeff.intensity = coeffSel->points[i].intensity;
+        coeff.x = coeffSel_->points[i].y;
+        coeff.y = coeffSel_->points[i].z;
+        coeff.z = coeffSel_->points[i].x;
+        coeff.intensity = coeffSel_->points[i].intensity;
         // in camera
         float arx = (crx*sry*srz*pointOri.x + crx*crz*sry*pointOri.y - srx*sry*pointOri.z) * coeff.x
                     + (-srx*srz*pointOri.x - crz*srx*pointOri.y - crx*pointOri.z) * coeff.y
@@ -779,14 +1067,14 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& conv
         cv::eigen(matAtA, matE, matV);
         matV.copyTo(matV2);
 
-        isDegenerate = false;
+        poseDegenerated_ = false;
         float eignThre[6] = {100, 100, 100, 100, 100, 100};
         for (int i = 5; i >= 0; i--) {
             if (matE.at<float>(0, i) < eignThre[i]) {
                 for (int j = 0; j < 6; j++) {
                     matV2.at<float>(i, j) = 0;
                 }
-                isDegenerate = true;
+                poseDegenerated_ = true;
             } else {
                 break;
             }
@@ -794,18 +1082,18 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& conv
         matP = matV.inv() * matV2;
     }
 
-    if (isDegenerate) {
+    if (poseDegenerated_) {
         cv::Mat matX2(6, 1, CV_32F, cv::Scalar::all(0));
         matX.copyTo(matX2);
         matX = matP * matX2;
     }
 
-    transformTobeMapped[0] += matX.at<float>(0, 0);
-    transformTobeMapped[1] += matX.at<float>(1, 0);
-    transformTobeMapped[2] += matX.at<float>(2, 0);
-    transformTobeMapped[3] += matX.at<float>(3, 0);
-    transformTobeMapped[4] += matX.at<float>(4, 0);
-    transformTobeMapped[5] += matX.at<float>(5, 0);
+    transformTobeMapped_[0] += matX.at<float>(0, 0);
+    transformTobeMapped_[1] += matX.at<float>(1, 0);
+    transformTobeMapped_[2] += matX.at<float>(2, 0);
+    transformTobeMapped_[3] += matX.at<float>(3, 0);
+    transformTobeMapped_[4] += matX.at<float>(4, 0);
+    transformTobeMapped_[5] += matX.at<float>(5, 0);
 
     float deltaR = sqrt(
                         pow(pcl::rad2deg(matX.at<float>(0, 0)), 2) +
@@ -817,7 +1105,7 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount, bool& conv
                         pow(matX.at<float>(5, 0) * 100, 2));
 
     if (deltaR < 0.05 && deltaT < 0.05) {
-        converged = true;
+        poseConverged_ = true;
     }
     return true;
 }
