@@ -57,7 +57,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (MulranPointXYZIRT,
 )
 
 // Use the Velodyne point format as a common representation
-using PointXYZIRT = VelodynePointXYZIRT;
+//using PointXYZIRT = VelodynePointXYZIRT;
 
 const int queueLength = 2000;
 

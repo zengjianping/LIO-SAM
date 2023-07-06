@@ -21,7 +21,22 @@
 #include <pcl/filters/crop_box.h> 
 
 #include <opencv2/opencv.hpp>
- 
+
+#include <gtsam/geometry/Rot3.h>
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/slam/BetweenFactor.h>
+#include <gtsam/navigation/GPSFactor.h>
+#include <gtsam/navigation/ImuFactor.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/Marginals.h>
+#include <gtsam/nonlinear/Values.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam_unstable/nonlinear/IncrementalFixedLagSmoother.h>
+
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -66,10 +81,34 @@ inline float pointDistance(PointType p1, PointType p2)
     return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
 }
 
-class ImuItem
+template<typename T>
+class Point_
 {
 public:
-    ImuItem();
+    Point_() {
+        x_ = T(0);
+        y_ = T(0);
+        z_ = T(0);
+    }
+
+    Point_(T x, T y, T z) {
+        x_ = x;
+        y_ = y;
+        z_ = z;
+    }
+
+public:
+    T x_, y_, z_;
+};
+
+typedef Point_<double> Velocity;
+typedef Point_<double> Acceleration;
+
+
+class ImuSample
+{
+public:
+    ImuSample();
 
 public:
     double timestamp_;
@@ -78,10 +117,10 @@ public:
     Eigen::Vector3d angularRPY_;
 };
 
-class PoseItem
+class PoseSample
 {
 public:
-    PoseItem();
+    PoseSample();
 
 public:
     double timestamp_;

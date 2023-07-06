@@ -87,6 +87,7 @@ link_directories(
 
 # Utilities library
 add_library(${PROJECT_NAME}_utilities STATIC
+  src/CommonUtility.cpp
   src/CoreUtility.cpp
   src/NodeUtility.cpp
   src/Scancontext.cpp
@@ -94,6 +95,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/FeatureCalculate.cpp
   src/LaserScanAdapt.cpp
   src/MapBuilding.cpp
+  src/ImuOdometryPredictor.cpp
   src/LaserCloudExtractor.cpp
   src/LaserFeatureRegister.cpp
 )
