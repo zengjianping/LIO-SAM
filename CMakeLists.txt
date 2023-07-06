@@ -67,6 +67,7 @@ catkin_package(
 # include directories
 include_directories(
 	include
+  include/ScanContext
 	${catkin_INCLUDE_DIRS}
 	${PCL_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
@@ -90,7 +91,6 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/CommonUtility.cpp
   src/CoreUtility.cpp
   src/NodeUtility.cpp
-  src/Scancontext.cpp
   src/ImuOdometry.cpp
   src/FeatureCalculate.cpp
   src/LaserScanAdapt.cpp
@@ -98,6 +98,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/ImuOdometryPredictor.cpp
   src/LaserCloudExtractor.cpp
   src/LaserCloudRegister.cpp
+  src/ScanContext/Scancontext.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
