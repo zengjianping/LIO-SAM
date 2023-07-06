@@ -6,9 +6,9 @@
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Declare LaserFeatureRegistration
+// Declare LaserCloudRegister
 
-class LaserFeatureRegistration
+class LaserCloudRegister
 {
 public:
     enum Type {
@@ -25,11 +25,11 @@ public:
         bool featureMatchMethod = 0; // 0: fit, 1: search
     };
 
-    static LaserFeatureRegistration* createInstance(Type type, const Options& options);
+    static LaserCloudRegister* createInstance(Type type, const Options& options);
 
 protected:
-    LaserFeatureRegistration(const Options& options);
-    virtual ~LaserFeatureRegistration();
+    LaserCloudRegister(const Options& options);
+    virtual ~LaserCloudRegister();
 
 public:
     void setEdgeFeatureCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudCurr, const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudLast);

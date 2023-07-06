@@ -1,5 +1,5 @@
 
-#include "LaserFeatureRegister.hpp"
+#include "LaserCloudRegister.hpp"
 
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
@@ -8,32 +8,32 @@
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Defines LaserFeatureRegistration
+// Defines LaserCloudRegister
 
-LaserFeatureRegistration::LaserFeatureRegistration(const Options& options)
+LaserCloudRegister::LaserCloudRegister(const Options& options)
     : options_(options)
 {
 }
 
-LaserFeatureRegistration::~LaserFeatureRegistration()
+LaserCloudRegister::~LaserCloudRegister()
 {
 }
 
-void LaserFeatureRegistration::setEdgeFeatureCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudCurr, const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudLast)
+void LaserCloudRegister::setEdgeFeatureCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudCurr, const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudLast)
 {
     edgeCloudCurr_ = cloudCurr;
     edgeCloudLast_ = cloudLast;
     kdtreeEdgeCloud_->setInputCloud(edgeCloudLast_);
 }
 
-void LaserFeatureRegistration::setSurfFeatureCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudCurr, const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudLast)
+void LaserCloudRegister::setSurfFeatureCloud(const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudCurr, const pcl::PointCloud<pcl::PointXYZI>::Ptr& cloudLast)
 {
     surfCloudCurr_ = cloudCurr;
     surfCloudLast_ = cloudLast;
     kdtreeSurfCloud_->setInputCloud(surfCloudLast_);
 }
 
-bool LaserFeatureRegistration::process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose)
+bool LaserCloudRegister::process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose)
 {
     if (!preprocess(initPose)) {
         return false;
@@ -58,7 +58,7 @@ bool LaserFeatureRegistration::process(const Eigen::Isometry3d& initPose, Eigen:
     return postprocess(finalPose);
 }
 
-bool LaserFeatureRegistration::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegister::preprocess(const Eigen::Isometry3d& initPose)
 {
     finalPose_ = Eigen::Isometry3d::Identity();
     poseConverged_ = false;
@@ -66,13 +66,13 @@ bool LaserFeatureRegistration::preprocess(const Eigen::Isometry3d& initPose)
     return true;
 }
 
-bool LaserFeatureRegistration::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegister::postprocess(Eigen::Isometry3d& finalPose)
 {
     finalPose_ = finalPose;
     return true;
 }
 
-void LaserFeatureRegistration::processEdgeFeatureCloud()
+void LaserCloudRegister::processEdgeFeatureCloud()
 {
     int numFeatures = edgeCloudCurr_->points.size();
     int numValids = 0;
@@ -103,7 +103,7 @@ void LaserFeatureRegistration::processEdgeFeatureCloud()
 constexpr double DISTANCE_SQ_THRESHOLD = 25;
 constexpr double NEARBY_SCAN = 2.5;
 
-bool LaserFeatureRegistration::matchOneEdgeFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+bool LaserCloudRegister::matchOneEdgeFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB)
 {
     std::vector<int> pointSearchInd;
@@ -175,7 +175,7 @@ bool LaserFeatureRegistration::matchOneEdgeFeatureS(const pcl::PointXYZI& pointO
     return false;
 }
 
-bool LaserFeatureRegistration::matchOneEdgeFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+bool LaserCloudRegister::matchOneEdgeFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& lineNorm, Eigen::Vector3d& centPoint)
 {
     std::vector<int> pointSearchInd;
@@ -212,7 +212,7 @@ bool LaserFeatureRegistration::matchOneEdgeFeatureF(const pcl::PointXYZI& pointO
     return false;
 }
 
-void LaserFeatureRegistration::processSurfFeatureCloud()
+void LaserCloudRegister::processSurfFeatureCloud()
 {
     int numFeatures = surfCloudCurr_->points.size();
     int numValids = 0;
@@ -241,7 +241,7 @@ void LaserFeatureRegistration::processSurfFeatureCloud()
     }
 }
 
-bool LaserFeatureRegistration::matchOneSurfFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+bool LaserCloudRegister::matchOneSurfFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
     Eigen::Vector3d& lastPointA, Eigen::Vector3d& lastPointB, Eigen::Vector3d& lastPointC)
 {
     std::vector<int> pointSearchInd;
@@ -322,7 +322,7 @@ bool LaserFeatureRegistration::matchOneSurfFeatureS(const pcl::PointXYZI& pointO
     return false;
 }
 
-bool LaserFeatureRegistration::matchOneSurfFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
+bool LaserCloudRegister::matchOneSurfFeatureF(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
         Eigen::Vector3d& planeNorm, double& planeIntercept)
 {
     std::vector<int> pointSearchInd;
@@ -371,13 +371,13 @@ bool LaserFeatureRegistration::matchOneSurfFeatureF(const pcl::PointXYZI& pointO
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Declare LaserFeatureRegistrationCeres
+// Declare LaserCloudRegisterCeres
 
-class LaserFeatureRegistrationCeres : public LaserFeatureRegistration
+class LaserCloudRegisterCeres : public LaserCloudRegister
 {
 public:
-    LaserFeatureRegistrationCeres(const Options& options);
-    virtual ~LaserFeatureRegistrationCeres();
+    LaserCloudRegisterCeres(const Options& options);
+    virtual ~LaserCloudRegisterCeres();
 
 protected:
     virtual bool preprocess(const Eigen::Isometry3d& initPose);
@@ -404,7 +404,7 @@ protected:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Define LaserFeatureRegistrationCeres
+// Define LaserCloudRegisterCeres
 
 struct LaserEdgeFeatureFunctor
 {
@@ -680,18 +680,18 @@ public:
 };
 
 
-LaserFeatureRegistrationCeres::LaserFeatureRegistrationCeres(const Options& options)
-    : LaserFeatureRegistration(options)
+LaserCloudRegisterCeres::LaserCloudRegisterCeres(const Options& options)
+    : LaserCloudRegister(options)
 {
 }
 
-LaserFeatureRegistrationCeres::~LaserFeatureRegistrationCeres()
+LaserCloudRegisterCeres::~LaserCloudRegisterCeres()
 {
 }
 
-bool LaserFeatureRegistrationCeres::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegisterCeres::preprocess(const Eigen::Isometry3d& initPose)
 {
-    if (!LaserFeatureRegistration::preprocess(initPose)) {
+    if (!LaserCloudRegister::preprocess(initPose)) {
         return false;
     }
 
@@ -701,16 +701,16 @@ bool LaserFeatureRegistrationCeres::preprocess(const Eigen::Isometry3d& initPose
     return true;
 }
 
-bool LaserFeatureRegistrationCeres::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegisterCeres::postprocess(Eigen::Isometry3d& finalPose)
 {
     finalPose = Eigen::Isometry3d::Identity();
     finalPose.linear() = quaterCurr2Last_.toRotationMatrix();
     finalPose.translation() = transCurr2Last_;
 
-    return LaserFeatureRegistration::postprocess(finalPose);
+    return LaserCloudRegister::postprocess(finalPose);
 }
 
-void LaserFeatureRegistrationCeres::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
+void LaserCloudRegisterCeres::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
 {
     Eigen::Quaterniond quaterPoint2Last = quaterCurr2Last_;
     Eigen::Vector3d transPoint2Last = transCurr2Last_;
@@ -728,7 +728,7 @@ void LaserFeatureRegistrationCeres::transformPointToLast(const pcl::PointXYZI& i
 	outp.intensity = inp.intensity;
 }
 
-bool LaserFeatureRegistrationCeres::prepareProcessing()
+bool LaserCloudRegisterCeres::prepareProcessing()
 {
     ceres::Problem::Options problem_options;
     problem_options.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
@@ -747,7 +747,7 @@ bool LaserFeatureRegistrationCeres::prepareProcessing()
     return true;
 }
 
-void LaserFeatureRegistrationCeres::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterCeres::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB)
 {
     double s = 1.0;
@@ -764,7 +764,7 @@ void LaserFeatureRegistrationCeres::addOneEdgeFeatureS(const pcl::PointXYZI& poi
     }
 }
 
-void LaserFeatureRegistrationCeres::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterCeres::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint)
 {
     Eigen::Vector3d lastPointA = 0.1 * lineNorm + centPoint;
@@ -779,7 +779,7 @@ void LaserFeatureRegistrationCeres::addOneEdgeFeatureF(const pcl::PointXYZI& poi
     }
 }
 
-void LaserFeatureRegistrationCeres::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterCeres::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC)
 {
     double s = 1.0;
@@ -794,7 +794,7 @@ void LaserFeatureRegistrationCeres::addOneSurfFeatureS(const pcl::PointXYZI& poi
     }
 }
 
-void LaserFeatureRegistrationCeres::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterCeres::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept)
 {
     if (options_.ceresDerivative == 1) {
@@ -806,7 +806,7 @@ void LaserFeatureRegistrationCeres::addOneSurfFeatureF(const pcl::PointXYZI& poi
     }
 }
 
-bool LaserFeatureRegistrationCeres::solveOptimProblem(int iterCount)
+bool LaserCloudRegisterCeres::solveOptimProblem(int iterCount)
 {
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
@@ -822,13 +822,13 @@ bool LaserFeatureRegistrationCeres::solveOptimProblem(int iterCount)
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Declare LaserFeatureRegistrationNewton
+// Declare LaserCloudRegisterNewton
 
-class LaserFeatureRegistrationNewton : public LaserFeatureRegistration
+class LaserCloudRegisterNewton : public LaserCloudRegister
 {
 public:
-    LaserFeatureRegistrationNewton(const Options& options);
-    virtual ~LaserFeatureRegistrationNewton();
+    LaserCloudRegisterNewton(const Options& options);
+    virtual ~LaserCloudRegisterNewton();
 
 protected:
     virtual bool preprocess(const Eigen::Isometry3d& initPose);
@@ -854,7 +854,7 @@ protected:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Define LaserFeatureRegistrationNewton
+// Define LaserCloudRegisterNewton
 
 inline Eigen::Affine3f transToAffine3f(float transformIn[])
 {
@@ -866,18 +866,18 @@ inline void affine3fToTrans(const Eigen::Affine3f& affinePose, float transformIn
     pcl::getTranslationAndEulerAngles(affinePose, transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
 }
 
-LaserFeatureRegistrationNewton::LaserFeatureRegistrationNewton(const Options& options)
-    : LaserFeatureRegistration(options)
+LaserCloudRegisterNewton::LaserCloudRegisterNewton(const Options& options)
+    : LaserCloudRegister(options)
 {
 }
 
-LaserFeatureRegistrationNewton::~LaserFeatureRegistrationNewton()
+LaserCloudRegisterNewton::~LaserCloudRegisterNewton()
 {
 }
 
-bool LaserFeatureRegistrationNewton::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegisterNewton::preprocess(const Eigen::Isometry3d& initPose)
 {
-    if (!LaserFeatureRegistration::preprocess(initPose)) {
+    if (!LaserCloudRegister::preprocess(initPose)) {
         return false;
     }
 
@@ -889,17 +889,17 @@ bool LaserFeatureRegistrationNewton::preprocess(const Eigen::Isometry3d& initPos
     return true;
 }
 
-bool LaserFeatureRegistrationNewton::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegisterNewton::postprocess(Eigen::Isometry3d& finalPose)
 {
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
     finalPose = Eigen::Isometry3d::Identity();
     finalPose.linear() = affinePose.rotation().cast<double>();
     finalPose.translation() = affinePose.translation().cast<double>();
 
-    return LaserFeatureRegistration::postprocess(finalPose);
+    return LaserCloudRegister::postprocess(finalPose);
 }
 
-void LaserFeatureRegistrationNewton::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
+void LaserCloudRegisterNewton::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
 {
     outp.x = transPointAssociateToMap_(0,0) * inp.x + transPointAssociateToMap_(0,1) * inp.y + transPointAssociateToMap_(0,2) * inp.z + transPointAssociateToMap_(0,3);
     outp.y = transPointAssociateToMap_(1,0) * inp.x + transPointAssociateToMap_(1,1) * inp.y + transPointAssociateToMap_(1,2) * inp.z + transPointAssociateToMap_(1,3);
@@ -907,7 +907,7 @@ void LaserFeatureRegistrationNewton::transformPointToLast(const pcl::PointXYZI& 
 	outp.intensity = inp.intensity;
 }
 
-bool LaserFeatureRegistrationNewton::prepareProcessing()
+bool LaserCloudRegisterNewton::prepareProcessing()
 {
     transPointAssociateToMap_ = transToAffine3f(transformTobeMapped_);
     laserCloudOri_->clear();
@@ -915,12 +915,12 @@ bool LaserFeatureRegistrationNewton::prepareProcessing()
     return true;
 }
 
-void LaserFeatureRegistrationNewton::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterNewton::addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB)
 {
 }
 
-void LaserFeatureRegistrationNewton::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterNewton::addOneEdgeFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lineNorm, const Eigen::Vector3d& centPoint)
 {
     Eigen::Vector3d lastPointA = 0.1 * lineNorm + centPoint;
@@ -961,12 +961,12 @@ void LaserFeatureRegistrationNewton::addOneEdgeFeatureF(const pcl::PointXYZI& po
     }
 }
 
-void LaserFeatureRegistrationNewton::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterNewton::addOneSurfFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& lastPointA, const Eigen::Vector3d& lastPointB, const Eigen::Vector3d& lastPointC)
 {
 }
 
-void LaserFeatureRegistrationNewton::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
+void LaserCloudRegisterNewton::addOneSurfFeatureF(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
         const Eigen::Vector3d& planeNorm, double planeIntercept)
 {
     double pa = planeNorm.x();
@@ -989,7 +989,7 @@ void LaserFeatureRegistrationNewton::addOneSurfFeatureF(const pcl::PointXYZI& po
     }
 }
 
-bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount)
+bool LaserCloudRegisterNewton::solveOptimProblem(int iterCount)
 {
     // This optimization is from the original loam_velodyne by Ji Zhang, need to cope with coordinate transformation
     // lidar <- camera      ---     camera <- lidar
@@ -1111,15 +1111,15 @@ bool LaserFeatureRegistrationNewton::solveOptimProblem(int iterCount)
 }
 
 
-LaserFeatureRegistration* LaserFeatureRegistration::createInstance(Type type, const Options& options)
+LaserCloudRegister* LaserCloudRegister::createInstance(Type type, const Options& options)
 {
-    LaserFeatureRegistration *instance = nullptr;
+    LaserCloudRegister *instance = nullptr;
 
-    if (type == LaserFeatureRegistration::NEWTON) {
-        instance = new LaserFeatureRegistrationNewton(options);
+    if (type == LaserCloudRegister::NEWTON) {
+        instance = new LaserCloudRegisterNewton(options);
     }
-    else if (type == LaserFeatureRegistration::CERES) {
-        instance = new LaserFeatureRegistrationCeres(options);
+    else if (type == LaserCloudRegister::CERES) {
+        instance = new LaserCloudRegisterCeres(options);
     }
 
     return instance;

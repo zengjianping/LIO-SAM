@@ -97,7 +97,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/MapBuilding.cpp
   src/ImuOdometryPredictor.cpp
   src/LaserCloudExtractor.cpp
-  src/LaserFeatureRegister.cpp
+  src/LaserCloudRegister.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
