@@ -1,11 +1,8 @@
 
-#ifndef __MAP_BUILDING_H__
-#define __MAP_BUILDING_H__
+#ifndef __MAP_POSE_OPTIMIZER_H__
+#define __MAP_POSE_OPTIMIZER_H__
 
-#include "CoreUtility.hpp"
-#include "Scancontext.h"
-
-using namespace gtsam;
+#include "CommonUtility.hpp"
 
 
 enum class SCInputType 
@@ -45,9 +42,9 @@ public:
     Options options_; // 算法参数
 
     // 因子图优化数据
-    ISAM2 *isam = nullptr; // 非线性优化器
-    NonlinearFactorGraph gtSAMgraph; // 因子图
-    Values initialEstimate; // 因子图变量初始值
+    gtsam::ISAM2 *isam = nullptr; // 非线性优化器
+    gtsam::NonlinearFactorGraph gtSAMgraph; // 因子图
+    gtsam::Values initialEstimate; // 因子图变量初始值
     Eigen::MatrixXd poseCovariance; // 当前优化结果的位姿方差，该方差在GPS因子中用到，如果该方差较小，则说明优化结果较好，即使打开GPS开关也不会将GPS因子加入因子图。
 
     // 回环检测数据
@@ -63,6 +60,6 @@ public:
     pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
 };
 
-#endif // __MAP_BUILDING_H__
+#endif // __MAP_POSE_OPTIMIZER_H__
 
 

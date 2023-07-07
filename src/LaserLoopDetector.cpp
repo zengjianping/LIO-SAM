@@ -82,12 +82,12 @@ bool LaserLoopDetector::performRSLoopClosure(std::pair<double,double>* loopInfo)
     // transform from world origin to corrected pose
     Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
     pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
-    gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
+    gtsam::Pose3 poseFrom = gtsam::Pose3(gtsam::Rot3::RzRyRx(roll, pitch, yaw), gtsam::Point3(x, y, z));
     gtsam::Pose3 poseTo = pclPointTogtsamPose3(cloudKeyPoses6D->points[loopKeyPre]);
     gtsam::Vector Vector6(6);
     float noiseScore = icp.getFitnessScore();
     Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
-    noiseModel::Diagonal::shared_ptr constraintNoise = noiseModel::Diagonal::Variances(Vector6);
+    gtsam::noiseModel::Diagonal::shared_ptr constraintNoise = gtsam::noiseModel::Diagonal::Variances(Vector6);
 
     // Add pose constraint
     loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
@@ -170,14 +170,14 @@ bool LaserLoopDetector::performSCLoopClosure()
 
     // giseop 
     pcl::getTranslationAndEulerAngles(correctionLidarFrame, x, y, z, roll, pitch, yaw);
-    gtsam::Pose3 poseFrom = Pose3(Rot3::RzRyRx(roll, pitch, yaw), Point3(x, y, z));
-    gtsam::Pose3 poseTo = Pose3(Rot3::RzRyRx(0.0, 0.0, 0.0), Point3(0.0, 0.0, 0.0));
+    gtsam::Pose3 poseFrom = gtsam::Pose3(gtsam::Rot3::RzRyRx(roll, pitch, yaw), gtsam::Point3(x, y, z));
+    gtsam::Pose3 poseTo = gtsam::Pose3(gtsam::Rot3::RzRyRx(0.0, 0.0, 0.0), gtsam::Point3(0.0, 0.0, 0.0));
 
     // giseop, robust kernel for a SC loop
     float robustNoiseScore = 0.5; // constant is ok...
     gtsam::Vector robustNoiseVector6(6); 
     robustNoiseVector6 << robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore, robustNoiseScore;
-    noiseModel::Base::shared_ptr robustConstraintNoise; 
+    gtsam::noiseModel::Base::shared_ptr robustConstraintNoise; 
     robustConstraintNoise = gtsam::noiseModel::Robust::Create(
         gtsam::noiseModel::mEstimator::Cauchy::Create(1), // optional: replacing Cauchy by DCS or GemanMcClure, but with a good front-end loop detector, Cauchy is empirically enough.
         gtsam::noiseModel::Diagonal::Variances(robustNoiseVector6)

@@ -1,11 +1,9 @@
 
-#ifndef __MAP_BUILDING_H__
-#define __MAP_BUILDING_H__
+#ifndef __LASER_LOOP_DETECTOR_H__
+#define __LASER_LOOP_DETECTOR_H__
 
-#include "CoreUtility.hpp"
+#include "CommonUtility.hpp"
 #include "Scancontext.h"
-
-using namespace gtsam;
 
 
 class LaserLoopDetector
@@ -62,6 +60,6 @@ public:
     SCManager scManager; // scancontext loop closure
 };
 
-#endif // __MAP_BUILDING_H__
+#endif // __LASER_LOOP_DETECTOR_H__
 
 

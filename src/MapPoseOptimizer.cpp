@@ -2,20 +2,20 @@
 #include "MapPoseOptimizer.hpp"
 
 
-using symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
-using symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
-using symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
-using symbol_shorthand::G; // GPS pose
+using gtsam::symbol_shorthand::X; // Pose3 (x,y,z,r,p,y)
+using gtsam::symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
+using gtsam::symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
+using gtsam::symbol_shorthand::G; // GPS pose
 
 
 MapPoseOptimizer::MapPoseOptimizer(const Options& options)
 {
     options_ = options;
 
-    ISAM2Params parameters;
+    gtsam::ISAM2Params parameters;
     parameters.relinearizeThreshold = 0.1;
     parameters.relinearizeSkip = 1;
-    isam = new ISAM2(parameters);
+    isam = new gtsam::ISAM2(parameters);
 }
 
 MapPoseOptimizer::~MapPoseOptimizer()
@@ -33,13 +33,13 @@ void MapPoseOptimizer::addOdomFactor(const Eigen::Isometry3d& odomPose)
     gtsam::Pose3 poseCurr = poseEigen2Gtsam(odomPose);
 
     if (cloudKeyPoses3D->points.empty()) {
-        noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
-        gtSAMgraph.add(PriorFactor<Pose3>(0, poseCurr, priorNoise));
+        gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
+        gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poseCurr, priorNoise));
         initialEstimate.insert(0, poseCurr);
     }  else {
-        noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+        gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
         gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
-        gtSAMgraph.add(BetweenFactor<Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseCurr), odometryNoise));
+        gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseCurr), odometryNoise));
         initialEstimate.insert(cloudKeyPoses3D->size(), poseCurr);
     }
 }
@@ -99,7 +99,7 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
 
             gtsam::Vector Vector3(3);
             Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
-            noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
+            gtsam::noiseModel::Diagonal::shared_ptr gps_noise = gtsam::noiseModel::Diagonal::Variances(Vector3);
             gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
             gtSAMgraph.add(gps_factor);
 
@@ -121,7 +121,7 @@ void MapPoseOptimizer::addLoopFactor(vector<pair<int, int>>& loopIndexQueue, vec
         gtsam::Pose3 poseBetween = loopPoseQueue[i];
         //gtsam::noiseModel::Diagonal::shared_ptr noiseBetween = loopNoiseQueue[i];
         auto noiseBetween = loopNoiseQueue[i];
-        gtSAMgraph.add(BetweenFactor<Pose3>(indexFrom, indexTo, poseBetween, noiseBetween));
+        gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(indexFrom, indexTo, poseBetween, noiseBetween));
     }
 
     loopIndexQueue.clear();
@@ -171,11 +171,11 @@ bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
     //save key poses
     PointType thisPose3D;
     PointTypePose thisPose6D;
-    Pose3 latestEstimate;
+    gtsam::Pose3 latestEstimate;
 
-    Values isamCurrentEstimate; // 优化器当前优化结果
+    gtsam::Values isamCurrentEstimate; // 优化器当前优化结果
     isamCurrentEstimate = isam->calculateEstimate();
-    latestEstimate = isamCurrentEstimate.at<Pose3>(isamCurrentEstimate.size()-1);
+    latestEstimate = isamCurrentEstimate.at<gtsam::Pose3>(isamCurrentEstimate.size()-1);
     // cout << "****************************************************" << endl;
     // isamCurrentEstimate.print("Current estimate: ");
 
@@ -207,16 +207,16 @@ bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
         int numPoses = isamCurrentEstimate.size();
 
         for (int i = 0; i < numPoses; ++i) {
-            cloudKeyPoses3D->points[i].x = isamCurrentEstimate.at<Pose3>(i).translation().x();
-            cloudKeyPoses3D->points[i].y = isamCurrentEstimate.at<Pose3>(i).translation().y();
-            cloudKeyPoses3D->points[i].z = isamCurrentEstimate.at<Pose3>(i).translation().z();
+            cloudKeyPoses3D->points[i].x = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().x();
+            cloudKeyPoses3D->points[i].y = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().y();
+            cloudKeyPoses3D->points[i].z = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().z();
 
             cloudKeyPoses6D->points[i].x = cloudKeyPoses3D->points[i].x;
             cloudKeyPoses6D->points[i].y = cloudKeyPoses3D->points[i].y;
             cloudKeyPoses6D->points[i].z = cloudKeyPoses3D->points[i].z;
-            cloudKeyPoses6D->points[i].roll  = isamCurrentEstimate.at<Pose3>(i).rotation().roll();
-            cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<Pose3>(i).rotation().pitch();
-            cloudKeyPoses6D->points[i].yaw   = isamCurrentEstimate.at<Pose3>(i).rotation().yaw();
+            cloudKeyPoses6D->points[i].roll  = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().roll();
+            cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().pitch();
+            cloudKeyPoses6D->points[i].yaw   = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().yaw();
         }
     }
 }
