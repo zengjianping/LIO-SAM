@@ -69,7 +69,55 @@ POINT_CLOUD_REGISTER_POINT_STRUCT (PointXYZIRT,
     (uint16_t, ring, ring) (float, time, time)
 )
 
+/*
+ * A point cloud type that has 6D pose info ([x,y,z,roll,pitch,yaw] intensity is time stamp)
+ */
+struct PointXYZIRPYT
+{
+    PCL_ADD_POINT4D
+    PCL_ADD_INTENSITY;                  // preferred way of adding a XYZ+padding
+    float roll;
+    float pitch;
+    float yaw;
+    double time;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW   // make sure our new allocators are aligned
+} EIGEN_ALIGN16;                    // enforce SSE padding for correct memory alignment
+
+POINT_CLOUD_REGISTER_POINT_STRUCT (PointXYZIRPYT,
+    (float, x, x) (float, y, y)
+    (float, z, z) (float, intensity, intensity)
+    (float, roll, roll) (float, pitch, pitch) (float, yaw, yaw)
+    (double, time, time))
+
 typedef pcl::PointXYZI PointType;
+
+typedef PointXYZIRPYT PointTypePose;
+
+pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn);
+
+inline gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint)
+{
+    return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
+                        gtsam::Point3(double(thisPoint.x), double(thisPoint.y), double(thisPoint.z)));
+}
+
+inline gtsam::Pose3 trans2gtsamPose(float transformIn[])
+{
+    return gtsam::Pose3(gtsam::Rot3::RzRyRx(transformIn[0], transformIn[1], transformIn[2]), 
+                        gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
+}
+
+inline Eigen::Affine3f pclPointToAffine3f(PointTypePose thisPoint)
+{ 
+    return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+}
+
+inline Eigen::Affine3f trans2Affine3f(float transformIn[])
+{
+    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
+}
+
+PointTypePose trans2PointTypePose(float transformIn[]);
 
 inline float pointDistance(PointType p)
 {

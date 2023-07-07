@@ -730,9 +730,9 @@ void LaserCloudRegisterCeres::transformPointToLast(const pcl::PointXYZI& inp, pc
 
 bool LaserCloudRegisterCeres::prepareProcessing()
 {
-    ceres::Problem::Options problem_options;
-    problem_options.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
-    problem_.reset(new ceres::Problem(problem_options));
+    ceres::Problem::Options problemOptions;
+    problemOptions.loss_function_ownership = ceres::DO_NOT_TAKE_OWNERSHIP;
+    problem_.reset(new ceres::Problem(problemOptions));
     lossFunction_.reset(new ceres::HuberLoss(0.1));
 
     if (options_.ceresDerivative == 1) {

@@ -98,6 +98,8 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/ImuOdometryPredictor.cpp
   src/LaserCloudExtractor.cpp
   src/LaserCloudRegister.cpp
+  src/LaserLoopDetector.cpp
+  src/MapPoseOptimizer.cpp
   src/ScanContext/Scancontext.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
