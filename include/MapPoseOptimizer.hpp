@@ -30,9 +30,10 @@ public:
     MapPoseOptimizer(const Options& options);
     ~MapPoseOptimizer();
 
-    void process(pcl::PointCloud<PointType>::Ptr& cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& cloudKeyPoses6D,
-            double laserTime, const Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
-            vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue);
+    bool process(pcl::PointCloud<PointType>::Ptr& cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& cloudKeyPoses6D,
+        double laserTime, const Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
+        vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue);
+    bool poseUpdated() { return aLoopIsClosed; }
 
 protected:
     void addOdomFactor(const Eigen::Isometry3d& odomPose);

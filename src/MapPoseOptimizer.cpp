@@ -130,7 +130,7 @@ void MapPoseOptimizer::addLoopFactor(vector<pair<int, int>>& loopIndexQueue, vec
     aLoopIsClosed = true;
 }
 
-void MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
+bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
         double laserTime, const Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
         vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue)
 {
@@ -138,6 +138,8 @@ void MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
     lastPose = odomPose;
     cloudKeyPoses3D = _cloudKeyPoses3D;
     cloudKeyPoses6D = _cloudKeyPoses6D;
+
+    aLoopIsClosed = false;
 
     // odom factor
     addOdomFactor(odomPose);
@@ -201,7 +203,7 @@ void MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
     // save updated transform
     lastPose = Eigen::Isometry3d(latestEstimate.matrix());
 
-    if (aLoopIsClosed == true) {
+    if (aLoopIsClosed) {
         int numPoses = isamCurrentEstimate.size();
 
         for (int i = 0; i < numPoses; ++i) {
@@ -216,8 +218,6 @@ void MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
             cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<Pose3>(i).rotation().pitch();
             cloudKeyPoses6D->points[i].yaw   = isamCurrentEstimate.at<Pose3>(i).rotation().yaw();
         }
-
-        aLoopIsClosed = false;
     }
 }
 
