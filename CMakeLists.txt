@@ -88,6 +88,7 @@ link_directories(
 
 # Utilities library
 add_library(${PROJECT_NAME}_utilities STATIC
+  src/ScanContext/Scancontext.cpp
   src/CommonUtility.cpp
   src/CoreUtility.cpp
   src/NodeUtility.cpp
@@ -100,7 +101,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/LaserCloudRegister.cpp
   src/LaserLoopDetector.cpp
   src/MapPoseOptimizer.cpp
-  src/ScanContext/Scancontext.cpp
+  src/MapCloudBuilder.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 

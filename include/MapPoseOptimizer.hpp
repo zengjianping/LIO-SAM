@@ -5,14 +5,6 @@
 #include "CommonUtility.hpp"
 
 
-enum class SCInputType 
-{ 
-    SINGLE_SCAN_FULL, 
-    SINGLE_SCAN_FEAT, 
-    MULTI_SCAN_FEAT 
-}; 
-
-
 class MapPoseOptimizer
 {
 public:
@@ -28,7 +20,7 @@ public:
     ~MapPoseOptimizer();
 
     bool process(pcl::PointCloud<PointType>::Ptr& cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& cloudKeyPoses6D,
-        double laserTime, const Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
+        double laserTime, Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
         vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue);
     bool poseUpdated() { return aLoopIsClosed; }
 

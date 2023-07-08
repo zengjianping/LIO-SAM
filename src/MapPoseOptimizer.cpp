@@ -131,7 +131,7 @@ void MapPoseOptimizer::addLoopFactor(vector<pair<int, int>>& loopIndexQueue, vec
 }
 
 bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
-        double laserTime, const Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
+        double laserTime, Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
         vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue)
 {
     timeLaserInfoCur = laserTime;
@@ -201,7 +201,7 @@ bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
     poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size()-1);
 
     // save updated transform
-    lastPose = Eigen::Isometry3d(latestEstimate.matrix());
+    odomPose = Eigen::Isometry3d(latestEstimate.matrix());
 
     if (aLoopIsClosed) {
         int numPoses = isamCurrentEstimate.size();

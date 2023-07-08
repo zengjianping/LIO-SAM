@@ -35,6 +35,14 @@ void LaserCloudRegister::setSurfFeatureCloud(const pcl::PointCloud<pcl::PointXYZ
 
 bool LaserCloudRegister::process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose)
 {
+    int numEdgeFeatures = edgeCloudCurr_->points.size();
+    int numSurfFeatures = surfCloudCurr_->points.size();
+
+    if (numEdgeFeatures < options_.edgeFeatureMinValidNum || numSurfFeatures < options_.surfFeatureMinValidNum) {
+        printf("Not enough features! Only %d edge and %d planar features available.\n", numEdgeFeatures, numSurfFeatures);
+        return false;
+    }
+
     if (!preprocess(initPose)) {
         return false;
     }
@@ -889,8 +897,21 @@ bool LaserCloudRegisterNewton::preprocess(const Eigen::Isometry3d& initPose)
     return true;
 }
 
+float constraintTransformation(float value, float limit)
+{
+    if (value < -limit)
+        value = -limit;
+    if (value > limit)
+        value = limit;
+    return value;
+}
+
 bool LaserCloudRegisterNewton::postprocess(Eigen::Isometry3d& finalPose)
 {
+    transformTobeMapped_[0] = constraintTransformation(transformTobeMapped_[0], options_.rotation_tollerance);
+    transformTobeMapped_[1] = constraintTransformation(transformTobeMapped_[1], options_.rotation_tollerance);
+    transformTobeMapped_[5] = constraintTransformation(transformTobeMapped_[5], options_.z_tollerance);
+
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
     finalPose = Eigen::Isometry3d::Identity();
     finalPose.linear() = affinePose.rotation().cast<double>();

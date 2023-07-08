@@ -17,12 +17,16 @@ public:
     };
 
     struct Options {
+        int edgeFeatureMinValidNum;
+        int surfFeatureMinValidNum;
         int maxIterCount = 10;
         int minFeatureNum = 50;
         int ceresDerivative = 0; // 0: automatic, 1: analytic
         bool undistortScan = false;
         double scanPeriod = 0.1;
         bool featureMatchMethod = 0; // 0: fit, 1: search
+        float z_tollerance; 
+        float rotation_tollerance;
     };
 
     static LaserCloudRegister* createInstance(Type type, const Options& options);

@@ -13,14 +13,13 @@ LaserLoopDetector::LaserLoopDetector(const Options& options)
 bool LaserLoopDetector::process(const pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, const pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
         const vector<pcl::PointCloud<PointType>::Ptr>& _cornerCloudKeyFrames, const vector<pcl::PointCloud<PointType>::Ptr>& _surfCloudKeyFrames,
         vector<pair<int, int>>& _loopIndexQueue, vector<gtsam::Pose3>& _loopPoseQueue, vector<gtsam::SharedNoiseModel>& _loopNoiseQueue,
-        const pcl::PointCloud<PointType>::Ptr& scCloud, double laserTime, std::pair<double,double>* loopInfo)
+        double laserTime, std::pair<double,double>* loopInfo)
 {
     timeLaserInfoCur = laserTime;
     cloudKeyPoses3D = _cloudKeyPoses3D;
     cloudKeyPoses6D = _cloudKeyPoses6D;
     cornerCloudKeyFrames = _cornerCloudKeyFrames;
     surfCloudKeyFrames = _surfCloudKeyFrames;
-    scManager.makeAndSaveScancontextAndKeys(*scCloud);
 
     loopIndexQueue.clear();
     loopPoseQueue.clear();
