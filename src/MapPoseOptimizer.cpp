@@ -23,24 +23,23 @@ MapPoseOptimizer::~MapPoseOptimizer()
     delete isam;
 }
 
-inline gtsam::Pose3 poseEigen2Gtsam(const Eigen::Isometry3d& eigenPose)
+void MapPoseOptimizer::addOdomFactor()
 {
-    return gtsam::Pose3(eigenPose.matrix());
-}
-
-void MapPoseOptimizer::addOdomFactor(const Eigen::Isometry3d& odomPose)
-{
-    gtsam::Pose3 poseCurr = poseEigen2Gtsam(odomPose);
-
-    if (cloudKeyPoses3D->points.empty()) {
+    int numPoses = (int)mapPoseFrames->size();
+    if (numPoses == 0) {
+    }
+    else if (numPoses == 1) {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
+        gtsam::Pose3 poseCurr = pclPointTogtsamPose3((*mapPoseFrames)[0].pose6D);
         gtSAMgraph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poseCurr, priorNoise));
         initialEstimate.insert(0, poseCurr);
-    }  else {
+    }
+    else {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
-        gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
-        gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseCurr), odometryNoise));
-        initialEstimate.insert(cloudKeyPoses3D->size(), poseCurr);
+        gtsam::Pose3 poseCurr = pclPointTogtsamPose3((*mapPoseFrames)[numPoses-1].pose6D);
+        gtsam::Pose3 poseFrom = pclPointTogtsamPose3((*mapPoseFrames)[numPoses-2].pose6D);
+        gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(numPoses-2, numPoses-1, poseFrom.between(poseCurr), odometryNoise));
+        initialEstimate.insert(numPoses-1, poseCurr);
     }
 }
 
@@ -50,10 +49,11 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
         return;
 
     // wait for system initialized and settles down
-    if (cloudKeyPoses3D->points.empty()) {
+    int numPoses = (int)mapPoseFrames->size();
+    if (numPoses <= 1) {
         return;
     } else {
-        if (pointDistance(cloudKeyPoses3D->front(), cloudKeyPoses3D->back()) < 5.0)
+        if (pointDistance(mapPoseFrames->front().pose6D, mapPoseFrames->back().pose6D) < 5.0)
             return;
     }
 
@@ -62,9 +62,9 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
         return;
 
     for (const PoseSample& thisGPS : gpsSamples) {
-        if (thisGPS.timestamp_ < timeLaserInfoCur - 0.2) {
+        if (thisGPS.timestamp_ < laserCloudTime - 0.2) {
             // message too old
-        } else if (thisGPS.timestamp_ > timeLaserInfoCur + 0.2) {
+        } else if (thisGPS.timestamp_ > laserCloudTime + 0.2) {
             // message too new
             break;
         }  else {
@@ -79,7 +79,7 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
             float gps_y = thisGPS.position_.y();
             float gps_z = thisGPS.position_.z();
             if (!options_.useGpsElevation) {
-                gps_z = lastPose.translation().z();
+                gps_z = mapPoseFrames->back().pose6D.z;
                 noise_z = 0.01;
             }
 
@@ -100,7 +100,7 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
             gtsam::Vector Vector3(3);
             Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
             gtsam::noiseModel::Diagonal::shared_ptr gps_noise = gtsam::noiseModel::Diagonal::Variances(Vector3);
-            gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+            gtsam::GPSFactor gps_factor(mapPoseFrames->size()-1, gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
             gtSAMgraph.add(gps_factor);
 
             aLoopIsClosed = true;
@@ -109,46 +109,37 @@ void MapPoseOptimizer::addGPSFactor(std::vector<PoseSample>& gpsSamples)
     }
 }
 
-void MapPoseOptimizer::addLoopFactor(vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue,
-        vector<gtsam::SharedNoiseModel>& loopNoiseQueue)
+void MapPoseOptimizer::addLoopFactor(LoopClosureItemVecPtr& loopClosureItems)
 {
-    if (loopIndexQueue.empty())
+    if (loopClosureItems->empty())
         return;
 
-    for (int i = 0; i < (int)loopIndexQueue.size(); ++i) {
-        int indexFrom = loopIndexQueue[i].first;
-        int indexTo = loopIndexQueue[i].second;
-        gtsam::Pose3 poseBetween = loopPoseQueue[i];
-        //gtsam::noiseModel::Diagonal::shared_ptr noiseBetween = loopNoiseQueue[i];
-        auto noiseBetween = loopNoiseQueue[i];
+    for (int i = 0; i < (int)loopClosureItems->size(); ++i) {
+        int indexFrom = (*loopClosureItems)[i].keyCur;
+        int indexTo = (*loopClosureItems)[i].keyPre;
+        const gtsam::Pose3& poseBetween = (*loopClosureItems)[i].pose;
+        const auto& noiseBetween = (*loopClosureItems)[i].noise;
         gtSAMgraph.add(gtsam::BetweenFactor<gtsam::Pose3>(indexFrom, indexTo, poseBetween, noiseBetween));
     }
 
-    loopIndexQueue.clear();
-    loopPoseQueue.clear();
-    loopNoiseQueue.clear();
     aLoopIsClosed = true;
 }
 
-bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
-        double laserTime, Eigen::Isometry3d& odomPose, std::vector<PoseSample>& gpsSamples,
-        vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue)
+bool MapPoseOptimizer::process(double _laserCloudTime, MapPoseFrameVecPtr& _mapPoseFrames, LoopClosureItemVecPtr& loopClosureItems,
+        std::vector<PoseSample>& gpsSamples)
 {
-    timeLaserInfoCur = laserTime;
-    lastPose = odomPose;
-    cloudKeyPoses3D = _cloudKeyPoses3D;
-    cloudKeyPoses6D = _cloudKeyPoses6D;
-
+    laserCloudTime = _laserCloudTime;
+    mapPoseFrames = _mapPoseFrames;
     aLoopIsClosed = false;
 
     // odom factor
-    addOdomFactor(odomPose);
+    addOdomFactor();
 
     // gps factor
     addGPSFactor(gpsSamples);
 
     // loop factor
-    addLoopFactor(loopIndexQueue, loopPoseQueue, loopNoiseQueue);
+    addLoopFactor(loopClosureItems);
 
     // cout << "****************************************************" << endl;
     // gtSAMgraph.print("GTSAM Graph:\n");
@@ -168,55 +159,52 @@ bool MapPoseOptimizer::process(pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D
     gtSAMgraph.resize(0);
     initialEstimate.clear();
 
-    //save key poses
-    PointType thisPose3D;
-    PointTypePose thisPose6D;
-    gtsam::Pose3 latestEstimate;
-
-    gtsam::Values isamCurrentEstimate; // 优化器当前优化结果
-    isamCurrentEstimate = isam->calculateEstimate();
-    latestEstimate = isamCurrentEstimate.at<gtsam::Pose3>(isamCurrentEstimate.size()-1);
+    gtsam::Values isamCurrentEstimate = isam->calculateEstimate();
+    gtsam::Pose3 latestEstimate = isamCurrentEstimate.at<gtsam::Pose3>(isamCurrentEstimate.size()-1);
     // cout << "****************************************************" << endl;
     // isamCurrentEstimate.print("Current estimate: ");
 
+    PointType thisPose3D;
     thisPose3D.x = latestEstimate.translation().x();
     thisPose3D.y = latestEstimate.translation().y();
     thisPose3D.z = latestEstimate.translation().z();
-    thisPose3D.intensity = cloudKeyPoses3D->size(); // this can be used as index
-    cloudKeyPoses3D->push_back(thisPose3D);
+    thisPose3D.intensity = mapPoseFrames->size() - 1; // this can be used as index
+    mapPoseFrames->back().pose3D = thisPose3D;
 
-    thisPose6D.x = thisPose3D.x;
-    thisPose6D.y = thisPose3D.y;
-    thisPose6D.z = thisPose3D.z;
-    thisPose6D.intensity = thisPose3D.intensity ; // this can be used as index
+    PointTypePose thisPose6D;
+    thisPose6D.x = latestEstimate.translation().x();
+    thisPose6D.y = latestEstimate.translation().y();
+    thisPose6D.z = latestEstimate.translation().z();
+    thisPose6D.intensity = mapPoseFrames->size() - 1; // this can be used as index
     thisPose6D.roll = latestEstimate.rotation().roll();
     thisPose6D.pitch = latestEstimate.rotation().pitch();
     thisPose6D.yaw = latestEstimate.rotation().yaw();
-    thisPose6D.time = timeLaserInfoCur;
-    cloudKeyPoses6D->push_back(thisPose6D);
+    thisPose6D.time = laserCloudTime;
+    mapPoseFrames->back().pose6D = thisPose6D;
 
     // cout << "****************************************************" << endl;
     // cout << "Pose covariance:" << endl;
     // cout << isam->marginalCovariance(isamCurrentEstimate.size()-1) << endl << endl;
     poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size()-1);
 
-    // save updated transform
-    odomPose = Eigen::Isometry3d(latestEstimate.matrix());
-
     if (aLoopIsClosed) {
         int numPoses = isamCurrentEstimate.size();
 
         for (int i = 0; i < numPoses; ++i) {
-            cloudKeyPoses3D->points[i].x = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().x();
-            cloudKeyPoses3D->points[i].y = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().y();
-            cloudKeyPoses3D->points[i].z = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().z();
+            const gtsam::Pose3& estimate = isamCurrentEstimate.at<gtsam::Pose3>(i);
 
-            cloudKeyPoses6D->points[i].x = cloudKeyPoses3D->points[i].x;
-            cloudKeyPoses6D->points[i].y = cloudKeyPoses3D->points[i].y;
-            cloudKeyPoses6D->points[i].z = cloudKeyPoses3D->points[i].z;
-            cloudKeyPoses6D->points[i].roll  = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().roll();
-            cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().pitch();
-            cloudKeyPoses6D->points[i].yaw   = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().yaw();
+            PointType& pose3D = (*mapPoseFrames)[i].pose3D;
+            pose3D.x = estimate.translation().x();
+            pose3D.y = estimate.translation().y();
+            pose3D.z = estimate.translation().z();
+
+            PointTypePose& pose6D = (*mapPoseFrames)[i].pose6D;
+            pose6D.x = estimate.translation().x();
+            pose6D.y = estimate.translation().y();
+            pose6D.z = estimate.translation().z();
+            pose6D.roll = estimate.rotation().roll();
+            pose6D.pitch = estimate.rotation().pitch();
+            pose6D.yaw = estimate.rotation().yaw();
         }
     }
 }

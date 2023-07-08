@@ -95,7 +95,7 @@ typedef PointXYZIRPYT PointTypePose;
 
 pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn);
 
-inline gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint)
+inline gtsam::Pose3 pclPointTogtsamPose3(const PointTypePose& thisPoint)
 {
     return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
                         gtsam::Point3(double(thisPoint.x), double(thisPoint.y), double(thisPoint.z)));
@@ -107,9 +107,33 @@ inline gtsam::Pose3 trans2gtsamPose(float transformIn[])
                         gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
 }
 
-inline Eigen::Affine3f pclPointToAffine3f(PointTypePose thisPoint)
+inline Eigen::Affine3f pclPointToAffine3f(const PointTypePose& thisPoint)
 { 
     return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+}
+
+inline Eigen::Isometry3d pclPointToIsometry3d(const PointTypePose& thisPoint)
+{ 
+    Eigen::Affine3f affine3f = pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+    return Eigen::Isometry3d(affine3f.matrix().cast<double>());
+}
+
+inline PointTypePose Isometry3dToPclPoint(const Eigen::Isometry3d& isometery3d)
+{
+    PointTypePose thisPoint;
+    Eigen::Affine3f affine3f(isometery3d.matrix().cast<float>());
+    pcl::getTranslationAndEulerAngles(affine3f, thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+    return thisPoint;
+}
+
+inline void affine3fToTrans(const Eigen::Affine3f& affinePose, float transformIn[])
+{
+    pcl::getTranslationAndEulerAngles(affinePose, transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
+}
+
+inline Eigen::Affine3f transToAffine3f(float transformIn[])
+{
+    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
 }
 
 inline Eigen::Affine3f trans2Affine3f(float transformIn[])
@@ -117,17 +141,42 @@ inline Eigen::Affine3f trans2Affine3f(float transformIn[])
     return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
 }
 
+inline gtsam::Pose3 poseEigen2Gtsam(const Eigen::Isometry3d& eigenPose)
+{
+    return gtsam::Pose3(eigenPose.matrix());
+}
+
 PointTypePose trans2PointTypePose(float transformIn[]);
 
-inline float pointDistance(PointType p)
+inline float pointDistance(const PointTypePose& p)
 {
     return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
 }
 
-inline float pointDistance(PointType p1, PointType p2)
+inline float pointDistance(const PointTypePose& p1, const PointTypePose& p2)
 {
     return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
 }
+
+inline float pointDistance(const PointType& p)
+{
+    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+}
+
+inline float pointDistance(const PointType& p1, const PointType& p2)
+{
+    return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
+}
+
+inline PointType pose3DFromPose6D(const PointTypePose& pose6D)
+{
+    PointType pose3D;
+    pose3D.x = pose6D.x;
+    pose3D.y = pose6D.y;
+    pose3D.z = pose6D.z;
+    pose3D.intensity = pose6D.intensity;
+}
+
 
 template<typename T>
 class Point_
@@ -176,6 +225,30 @@ public:
     Eigen::Vector3d angularRPY_;
     boost::array<double, 36> covariance_;
 };
+
+// 回环检测配对
+class LoopClosureItem
+{
+public:
+    int keyCur=-1, keyPre=-1; // 回环配对关系
+    gtsam::Pose3 pose; // 回环的姿态配对
+    gtsam::SharedNoiseModel noise; // 回环因子的噪声模型
+};
+typedef vector<LoopClosureItem> LoopClosureItemVec;
+typedef boost::shared_ptr<LoopClosureItemVec> LoopClosureItemVecPtr;
+
+// 地图位姿Frame
+class MapPoseFrame
+{
+public:
+    PointType pose3D; // 三维位姿，x,y,z
+    PointTypePose pose6D; // 六维位姿，x,y,z,roll,pitch,yaw
+    pcl::PointCloud<PointType>::Ptr extractedCloud; // 
+    pcl::PointCloud<PointType>::Ptr cornerCloud; // 角点点云
+    pcl::PointCloud<PointType>::Ptr surfCloud; // 平面点点云
+};
+typedef std::vector<MapPoseFrame> MapPoseFrameVec;
+typedef boost::shared_ptr<MapPoseFrameVec> MapPoseFrameVecPtr;
 
 #endif // _COMMON_UTILITY_H_
 

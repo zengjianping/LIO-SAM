@@ -6,29 +6,31 @@
 #include "Scancontext.h"
 
 
+enum class SCInputType 
+{ 
+    SINGLE_SCAN_FULL, 
+    SINGLE_SCAN_FEAT, 
+    MULTI_SCAN_FEAT 
+}; 
+
 class LaserLoopDetector
 {
 public:
     struct Options {
-        float mappingIcpLeafSize;
-        float historyKeyframeSearchRadius;
-        float historyKeyframeSearchTimeDiff;
-        int historyKeyframeSearchNum;
-        float historyKeyframeFitnessScore;
-        bool enableScanContextLoopClosure;
+        float loopClosureICPSurfLeafSize = 0.5;
+        float historyKeyframeSearchRadius = 15.0;
+        float historyKeyframeSearchTimeDiff = 30.0;
+        int historyKeyframeSearchNum = 25;
+        float historyKeyframeFitnessScore = 0.3;
+        bool enableScanContextLoopClosure = false;
     };
 
 public:
     LaserLoopDetector(const Options& options);
 
 public:
-    bool process(const pcl::PointCloud<PointType>::Ptr& cloudKeyPoses3D, const pcl::PointCloud<PointTypePose>::Ptr& cloudKeyPoses6D,
-            const vector<pcl::PointCloud<PointType>::Ptr>& cornerCloudKeyFrames, const vector<pcl::PointCloud<PointType>::Ptr>& surfCloudKeyFrames,
-            vector<pair<int, int>>& loopIndexQueue, vector<gtsam::Pose3>& loopPoseQueue, vector<gtsam::SharedNoiseModel>& loopNoiseQueue,
-            double laserTime, std::pair<double,double>* loopInfo=nullptr);
-
-public:
-    SCManager scManager; // scancontext loop closure
+    bool process(double laserCloudTime, MapPoseFrameVecPtr& mapPoseFrames, LoopClosureItemVecPtr& loopClosureItems,
+            std::pair<double,double>* loopInfo=nullptr);
 
 protected:
     bool performRSLoopClosure(std::pair<double,double>* loopInfo);
@@ -40,26 +42,13 @@ protected:
 protected:
     Options options_; // 算法参数
 
-    // 当前雷达帧信息
-    double timeLaserInfoCur; // 当前雷达帧的时间戳，秒
+    double laserCloudTime; // 当前雷达帧的时间戳，秒
+    MapPoseFrameVecPtr mapPoseFrames; // 地图位姿数据
+    LoopClosureItemVecPtr loopClosureItems; // 所有回环配对
 
-    // 保存所有关键帧的三维位姿，x,y,z
-    pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
-    // 保存所有关键帧的六维位姿，x,y,z,roll,pitch,yaw
-    pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
-
-    // 全局地图关键帧点云
-    std::vector<pcl::PointCloud<PointType>::Ptr> cornerCloudKeyFrames; // 所有关键帧的角点点云
-    std::vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames; // 所有关键帧的平面点点云
-
-    // 点云降采样器
-    pcl::VoxelGrid<PointType> downSizeFilterICP; // 做回环检测时使用ICP时的点云降采样器
-
-    // 回环检测数据
     std::map<int, int> loopIndexContainer; // 回环的索引字典，从当前帧到回环节点的索引
-    std::vector<pair<int, int>> loopIndexQueue; // 所有回环配对关系
-    std::vector<gtsam::Pose3> loopPoseQueue; // 所有回环的姿态配对关系
-    std::vector<gtsam::SharedNoiseModel> loopNoiseQueue; // 每个回环因子的噪声模型
+    pcl::VoxelGrid<PointType> downSizeFilterICP; // 做回环检测时使用ICP时的点云降采样器
+    SCManager scManager; // scancontext loop closure
 };
 
 #endif // __LASER_LOOP_DETECTOR_H__

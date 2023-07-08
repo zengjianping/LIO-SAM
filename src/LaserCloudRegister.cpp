@@ -864,16 +864,6 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Define LaserCloudRegisterNewton
 
-inline Eigen::Affine3f transToAffine3f(float transformIn[])
-{
-    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-}
-
-inline void affine3fToTrans(const Eigen::Affine3f& affinePose, float transformIn[])
-{
-    pcl::getTranslationAndEulerAngles(affinePose, transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-}
-
 LaserCloudRegisterNewton::LaserCloudRegisterNewton(const Options& options)
     : LaserCloudRegister(options)
 {
@@ -890,8 +880,7 @@ bool LaserCloudRegisterNewton::preprocess(const Eigen::Isometry3d& initPose)
     }
 
     Eigen::Affine3f affinePose = Eigen::Affine3f::Identity();
-    affinePose.linear() = initPose.rotation().cast<float>();
-    affinePose.translation() = initPose.translation().cast<float>();
+    affinePose.matrix() = initPose.matrix().cast<float>();
     affine3fToTrans(affinePose, transformTobeMapped_);
     
     return true;
@@ -914,8 +903,7 @@ bool LaserCloudRegisterNewton::postprocess(Eigen::Isometry3d& finalPose)
 
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
     finalPose = Eigen::Isometry3d::Identity();
-    finalPose.linear() = affinePose.rotation().cast<double>();
-    finalPose.translation() = affinePose.translation().cast<double>();
+    finalPose.matrix() = affinePose.matrix().cast<double>();
 
     return LaserCloudRegister::postprocess(finalPose);
 }

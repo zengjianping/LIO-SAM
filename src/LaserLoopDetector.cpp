@@ -6,39 +6,29 @@ LaserLoopDetector::LaserLoopDetector(const Options& options)
 {
     options_ = options;
 
-    float mappingIcpLeafSize = options_.mappingIcpLeafSize;
-    downSizeFilterICP.setLeafSize(mappingIcpLeafSize, mappingIcpLeafSize, mappingIcpLeafSize);
+    float loopClosureICPSurfLeafSize = options_.loopClosureICPSurfLeafSize;
+    downSizeFilterICP.setLeafSize(loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize);
 }
 
-bool LaserLoopDetector::process(const pcl::PointCloud<PointType>::Ptr& _cloudKeyPoses3D, const pcl::PointCloud<PointTypePose>::Ptr& _cloudKeyPoses6D,
-        const vector<pcl::PointCloud<PointType>::Ptr>& _cornerCloudKeyFrames, const vector<pcl::PointCloud<PointType>::Ptr>& _surfCloudKeyFrames,
-        vector<pair<int, int>>& _loopIndexQueue, vector<gtsam::Pose3>& _loopPoseQueue, vector<gtsam::SharedNoiseModel>& _loopNoiseQueue,
-        double laserTime, std::pair<double,double>* loopInfo)
+bool LaserLoopDetector::process(double _laserCloudTime, MapPoseFrameVecPtr& _mapPoseFrames, LoopClosureItemVecPtr& _loopClosureItems,
+        std::pair<double,double>* loopInfo)
 {
-    timeLaserInfoCur = laserTime;
-    cloudKeyPoses3D = _cloudKeyPoses3D;
-    cloudKeyPoses6D = _cloudKeyPoses6D;
-    cornerCloudKeyFrames = _cornerCloudKeyFrames;
-    surfCloudKeyFrames = _surfCloudKeyFrames;
+    laserCloudTime = _laserCloudTime;
+    mapPoseFrames = _mapPoseFrames;
+    loopClosureItems = _loopClosureItems;
 
-    loopIndexQueue.clear();
-    loopPoseQueue.clear();
-    loopNoiseQueue.clear();
+    loopClosureItems->clear();
 
     performRSLoopClosure(loopInfo);
     if (options_.enableScanContextLoopClosure)
         performSCLoopClosure();
 
-    _loopIndexQueue = loopIndexQueue;
-    _loopPoseQueue = loopPoseQueue;
-    _loopNoiseQueue = loopNoiseQueue;
-    
     return true;
 }
 
 bool LaserLoopDetector::performRSLoopClosure(std::pair<double,double>* loopInfo)
 {
-    if (cloudKeyPoses3D->points.empty() == true)
+    if (mapPoseFrames->empty())
         return false;
 
     // find keys
@@ -77,21 +67,24 @@ bool LaserLoopDetector::performRSLoopClosure(std::pair<double,double>* loopInfo)
     Eigen::Affine3f correctionLidarFrame;
     correctionLidarFrame = icp.getFinalTransformation();
     // transform from world origin to wrong pose
-    Eigen::Affine3f tWrong = pclPointToAffine3f(cloudKeyPoses6D->points[loopKeyCur]);
+    Eigen::Affine3f tWrong = pclPointToAffine3f((*mapPoseFrames)[loopKeyCur].pose6D);
     // transform from world origin to corrected pose
     Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
     pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
     gtsam::Pose3 poseFrom = gtsam::Pose3(gtsam::Rot3::RzRyRx(roll, pitch, yaw), gtsam::Point3(x, y, z));
-    gtsam::Pose3 poseTo = pclPointTogtsamPose3(cloudKeyPoses6D->points[loopKeyPre]);
+    gtsam::Pose3 poseTo = pclPointTogtsamPose3((*mapPoseFrames)[loopKeyPre].pose6D);
     gtsam::Vector Vector6(6);
     float noiseScore = icp.getFitnessScore();
     Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
     gtsam::noiseModel::Diagonal::shared_ptr constraintNoise = gtsam::noiseModel::Diagonal::Variances(Vector6);
 
     // Add pose constraint
-    loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
-    loopPoseQueue.push_back(poseFrom.between(poseTo));
-    loopNoiseQueue.push_back(constraintNoise);
+    LoopClosureItem loopClosureItem;
+    loopClosureItem.keyCur = loopKeyCur;
+    loopClosureItem.keyPre = loopKeyPre;
+    loopClosureItem.pose = poseFrom.between(poseTo);
+    loopClosureItem.noise = constraintNoise;
+    loopClosureItems->push_back(loopClosureItem);
 
     // add loop constriant
     loopIndexContainer[loopKeyCur] = loopKeyPre;
@@ -102,15 +95,39 @@ bool LaserLoopDetector::performRSLoopClosure(std::pair<double,double>* loopInfo)
 // copy from sc-lio-sam
 bool LaserLoopDetector::performSCLoopClosure()
 {
-    if (cloudKeyPoses3D->points.empty() == true)
+    if (mapPoseFrames->empty())
         return false;
+
+    pcl::PointCloud<PointType>::Ptr scCloud;
+    // The following code is copy from sc-lio-sam
+    // Scan Context loop detector - giseop
+    // - SINGLE_SCAN_FULL: using downsampled original point cloud (/full_cloud_projected + downsampling)
+    // - SINGLE_SCAN_FEAT: using surface feature as an input point cloud for scan context (2020.04.01: checked it works.)
+    // - MULTI_SCAN_FEAT: using NearKeyframes (because a MulRan scan does not have beyond region, so to solve this issue ... )
+    const SCInputType sc_input_type = SCInputType::SINGLE_SCAN_FULL; // change this 
+
+    if( sc_input_type == SCInputType::SINGLE_SCAN_FULL ) {
+        scCloud = mapPoseFrames->back().extractedCloud;
+    } 
+    else if (sc_input_type == SCInputType::SINGLE_SCAN_FEAT) {
+        scCloud = mapPoseFrames->back().surfCloud;
+    }
+    else if (sc_input_type == SCInputType::MULTI_SCAN_FEAT) { 
+        pcl::PointCloud<PointType>::Ptr multiKeyFrameFeatureCloud(new pcl::PointCloud<PointType>());
+        loopFindNearKeyframes(multiKeyFrameFeatureCloud, mapPoseFrames->size() - 1, options_.historyKeyframeSearchNum, -1);
+        scCloud = multiKeyFrameFeatureCloud;
+    }
+    else {
+        return false;
+    }
+    scManager.makeAndSaveScancontextAndKeys(*scCloud);
 
     // find keys
     // first: nn index, second: yaw diff 
     auto detectResult = scManager.detectLoopClosureID(); 
-    int loopKeyCur    = cloudKeyPoses3D->size() - 1;;
-    int loopKeyPre    = detectResult.first;
-    float yawDiffRad  = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
+    int loopKeyCur = mapPoseFrames->size() - 1;;
+    int loopKeyPre = detectResult.first;
+    float yawDiffRad = detectResult.second; // not use for v1 (because pcl icp withi initial somthing wrong...)
     if( loopKeyPre == -1)
         return false;
 
@@ -183,9 +200,12 @@ bool LaserLoopDetector::performSCLoopClosure()
     ); // - checked it works. but with robust kernel, map modification may be delayed (i.e,. requires more true-positive loop factors)
 
     // Add pose constraint
-    loopIndexQueue.push_back(make_pair(loopKeyCur, loopKeyPre));
-    loopPoseQueue.push_back(poseFrom.between(poseTo));
-    loopNoiseQueue.push_back(robustConstraintNoise);
+    LoopClosureItem loopClosureItem;
+    loopClosureItem.keyCur = loopKeyCur;
+    loopClosureItem.keyPre = loopKeyPre;
+    loopClosureItem.pose = poseFrom.between(poseTo);
+    loopClosureItem.noise = robustConstraintNoise;
+    loopClosureItems->push_back(loopClosureItem);
 
     // add loop constriant
     loopIndexContainer[loopKeyCur] = loopKeyPre;
@@ -195,7 +215,7 @@ bool LaserLoopDetector::performSCLoopClosure()
 
 bool LaserLoopDetector::detectLoopClosureDistance(int *latestID, int *closestID)
 {
-    int loopKeyCur = cloudKeyPoses3D->size() - 1;
+    int loopKeyCur = mapPoseFrames->size() - 1;
     int loopKeyPre = -1;
 
     // check loop constraint added before
@@ -208,12 +228,17 @@ bool LaserLoopDetector::detectLoopClosureDistance(int *latestID, int *closestID)
     kdtreeHistoryKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
     std::vector<int> pointSearchIndLoop;
     std::vector<float> pointSearchSqDisLoop;
+    pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
+    cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
+    for (const MapPoseFrame& frame : *mapPoseFrames) {
+        cloudKeyPoses3D->points.push_back(pose3DFromPose6D(frame.pose6D));
+    }
     kdtreeHistoryKeyPoses->setInputCloud(cloudKeyPoses3D);
     kdtreeHistoryKeyPoses->radiusSearch(cloudKeyPoses3D->back(), options_.historyKeyframeSearchRadius, pointSearchIndLoop, pointSearchSqDisLoop, 0);
     
     for (int i = 0; i < (int)pointSearchIndLoop.size(); ++i) {
         int id = pointSearchIndLoop[i];
-        if (abs(cloudKeyPoses6D->points[id].time - timeLaserInfoCur) > options_.historyKeyframeSearchTimeDiff) {
+        if (abs((*mapPoseFrames)[id].pose6D.time - laserCloudTime) > options_.historyKeyframeSearchTimeDiff) {
             loopKeyPre = id;
             break;
         }
@@ -241,15 +266,15 @@ bool LaserLoopDetector::detectLoopClosureExternal(std::pair<double,double>* loop
     if (abs(loopTimeCur - loopTimePre) < options_.historyKeyframeSearchTimeDiff)
         return false;
 
-    int cloudSize = cloudKeyPoses6D->size();
+    int cloudSize = mapPoseFrames->size();
     if (cloudSize < 2)
         return false;
 
     // latest key
     loopKeyCur = cloudSize - 1;
     for (int i = cloudSize - 1; i >= 0; --i) {
-        if (cloudKeyPoses6D->points[i].time >= loopTimeCur)
-            loopKeyCur = round(cloudKeyPoses6D->points[i].intensity);
+        if ((*mapPoseFrames)[i].pose6D.time >= loopTimeCur)
+            loopKeyCur = round((*mapPoseFrames)[i].pose6D.intensity);
         else
             break;
     }
@@ -257,8 +282,8 @@ bool LaserLoopDetector::detectLoopClosureExternal(std::pair<double,double>* loop
     // previous key
     loopKeyPre = 0;
     for (int i = 0; i < cloudSize; ++i) {
-        if (cloudKeyPoses6D->points[i].time <= loopTimePre)
-            loopKeyPre = round(cloudKeyPoses6D->points[i].intensity);
+        if ((*mapPoseFrames)[i].pose6D.time <= loopTimePre)
+            loopKeyPre = round((*mapPoseFrames)[i].pose6D.intensity);
         else
             break;
     }
@@ -280,14 +305,14 @@ void LaserLoopDetector::loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& n
 {
     // extract near keyframes
     nearKeyframes->clear();
-    int cloudSize = cloudKeyPoses6D->size();
+    int cloudSize = mapPoseFrames->size();
     for (int i = -searchNum; i <= searchNum; ++i) {
         int keyNear = key + i;
         if (keyNear < 0 || keyNear >= cloudSize )
             continue;
         int select_loop_index = (loop_index != -1) ? loop_index : keyNear;
-        *nearKeyframes += *transformPointCloud(cornerCloudKeyFrames[keyNear], &cloudKeyPoses6D->points[select_loop_index]);
-        *nearKeyframes += *transformPointCloud(surfCloudKeyFrames[keyNear], &cloudKeyPoses6D->points[select_loop_index]);
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames)[keyNear].cornerCloud, &(*mapPoseFrames)[select_loop_index].pose6D);
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames)[keyNear].surfCloud, &(*mapPoseFrames)[select_loop_index].pose6D);
     }
 
     if (nearKeyframes->empty())
@@ -299,4 +324,5 @@ void LaserLoopDetector::loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& n
     downSizeFilterICP.filter(*cloud_temp);
     *nearKeyframes = *cloud_temp;
 }
+
 
