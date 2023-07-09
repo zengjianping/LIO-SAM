@@ -42,13 +42,13 @@ protected:
 protected:
     Options options_; // 算法参数
 
-    double laserCloudTime; // 当前雷达帧的时间戳，秒
-    MapPoseFrameVecPtr mapPoseFrames; // 地图位姿数据
-    LoopClosureItemVecPtr loopClosureItems; // 所有回环配对
+    double laserCloudTime_; // 当前雷达帧的时间戳，秒
+    MapPoseFrameVecPtr mapPoseFrames_; // 地图位姿数据
+    LoopClosureItemVecPtr loopClosureItems_; // 所有回环配对
 
-    std::map<int, int> loopIndexContainer; // 回环的索引字典，从当前帧到回环节点的索引
-    pcl::VoxelGrid<PointType> downSizeFilterICP; // 做回环检测时使用ICP时的点云降采样器
-    SCManager scManager; // scancontext loop closure
+    std::map<int, int> loopIndexContainer_; // 回环的索引字典，从当前帧到回环节点的索引
+    pcl::VoxelGrid<PointType> downSizeFilterICP_; // 做回环检测时使用ICP时的点云降采样器
+    SCManager scManager_; // scancontext loop closure
 };
 
 #endif // __LASER_LOOP_DETECTOR_H__

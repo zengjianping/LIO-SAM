@@ -9,16 +9,16 @@ class LaserCloudExtractor
 {
 public:
     struct Options {
-        int N_SCAN;
-        int Horizon_SCAN;
-        int downsampleRate;
-        int pointFilterNum;
-        float lidarMinRange;
-        float lidarMaxRange;
+        int N_SCAN = 16;
+        int Horizon_SCAN = 1800;
+        int downsampleRate = 1;
+        int pointFilterNum = 1;
+        float lidarMinRange = 1.0;
+        float lidarMaxRange = 1000.0;
         bool sequenceColumn = false;
-        float surfLeafSize;
-        float edgeThreshold;
-        float surfThreshold;
+        float surfLeafSize = 0.4;
+        float edgeThreshold = 1.0;
+        float surfThreshold = 0.1;
     };
 
 public:
@@ -26,14 +26,14 @@ public:
     ~LaserCloudExtractor();
 
 public:
-    bool process(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, Eigen::Isometry3d *skewPose);
+    bool process(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, EntityPose *skewPose);
     pcl::PointCloud<PointType>::Ptr getExtractedCloud() { return extractedCloud_; }
     pcl::PointCloud<PointType>::Ptr getCornerCloud() { return cornerCloud_; }
     pcl::PointCloud<PointType>::Ptr getSurfaceCloud() { return surfaceCloud_; }
 
 protected:
     PointType deskewPoint(const PointType& inPoint, double relTime);
-    void prepareProcessing(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, Eigen::Isometry3d *skewPose);
+    void prepareProcessing(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, EntityPose *skewPose);
     void projectPointCloud();
     void extractPointCloud();
     void calculateSmoothness();

@@ -2,48 +2,93 @@
 #include "CommonUtility.hpp"
 
 
-ImuSample::ImuSample() :
-    timestamp_(0), angularRPY_(0,0,0),
-    linearAcceleration_(0,0,0), angularVelocity_(0,0,0)
+void EntityPose::init()
 {
+    timestamp = -1;
+    orientation = Eigen::Quaterniond::Identity();
+    position = Eigen::Vector3d(0,0,0);
+    angular = Eigen::Vector3d(0,0,0);
+    angularVel = Eigen::Vector3d(0,0,0);
+    linearVel = Eigen::Vector3d(0,0,0);
+    linearAcc = Eigen::Vector3d(0,0,0);
+    //covariance;
 }
 
-PoseSample::PoseSample() :
-    timestamp_(0), angularRPY_(0,0,0), position_(0,0,0)
+EntityPose::EntityPose()
 {
+    init();
 }
 
-pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
+EntityPose::EntityPose(const Eigen::Isometry3d& transform)
 {
-    pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-
-    int cloudSize = cloudIn->size();
-    cloudOut->resize(cloudSize);
-
-    Eigen::Affine3f transCur = pcl::getTransformation(transformIn->x, transformIn->y, transformIn->z, transformIn->roll, transformIn->pitch, transformIn->yaw);
-    
-    #pragma omp parallel for num_threads(numberOfCores)
-    for (int i = 0; i < cloudSize; ++i) {
-        const auto &pointFrom = cloudIn->points[i];
-        cloudOut->points[i].x = transCur(0,0) * pointFrom.x + transCur(0,1) * pointFrom.y + transCur(0,2) * pointFrom.z + transCur(0,3);
-        cloudOut->points[i].y = transCur(1,0) * pointFrom.x + transCur(1,1) * pointFrom.y + transCur(1,2) * pointFrom.z + transCur(1,3);
-        cloudOut->points[i].z = transCur(2,0) * pointFrom.x + transCur(2,1) * pointFrom.y + transCur(2,2) * pointFrom.z + transCur(2,3);
-        cloudOut->points[i].intensity = pointFrom.intensity;
-    }
-    return cloudOut;
+    init();
+    orientation = Eigen::Quaterniond(transform.rotation());
+    position = transform.translation();
 }
 
-PointTypePose trans2PointTypePose(float transformIn[])
+EntityPose::EntityPose(const Eigen::Affine3d& transform)
 {
-    PointTypePose thisPose6D;
-    thisPose6D.x = transformIn[3];
-    thisPose6D.y = transformIn[4];
-    thisPose6D.z = transformIn[5];
-    thisPose6D.roll  = transformIn[0];
-    thisPose6D.pitch = transformIn[1];
-    thisPose6D.yaw   = transformIn[2];
-    return thisPose6D;
+    init();
+    orientation = Eigen::Quaterniond(transform.rotation());
+    position = transform.translation();
 }
 
+EntityPose::EntityPose(const gtsam::Pose3& transform)
+{
+    init();
+    orientation = transform.rotation().toQuaternion();
+    position = transform.translation();
+}
+
+EntityPose::EntityPose(const gtsam::NavState& transform)
+{
+    init();
+    orientation = transform.quaternion();
+    position = transform.position();
+}
+
+Eigen::Isometry3d EntityPose::toIsometry() const
+{
+    Eigen::Isometry3d transform;
+    transform.linear() = orientation.toRotationMatrix();
+    transform.translation() = position;
+    return transform;
+}
+
+Eigen::Affine3d EntityPose::toAffine() const
+{
+    Eigen::Isometry3d transform;
+    transform.linear() = orientation.toRotationMatrix();
+    transform.translation() = position;
+    return transform;
+}
+
+gtsam::Pose3 EntityPose::toGtsamPose() const
+{
+    return gtsam::Pose3(gtsam::Rot3(orientation), gtsam::Point3(position));
+}
+
+gtsam::NavState EntityPose::toGtsamState() const
+{
+    return gtsam::NavState(gtsam::Rot3(orientation), gtsam::Point3(position), gtsam::Velocity3(0,0,0));
+}
+
+EntityPose EntityPose::inverse() const
+{
+    Eigen::Isometry3d transform = toIsometry().inverse();
+    return EntityPose(transform);
+}
+
+EntityPose EntityPose::operator *(const EntityPose& other) const
+{
+    Eigen::Isometry3d transform = toIsometry() * other.toIsometry();
+    return EntityPose(transform);
+}
+
+EntityPose EntityPose::betweenTo(const EntityPose& other) const
+{
+    Eigen::Isometry3d transform = toIsometry().inverse() * other.toIsometry();
+    return EntityPose(transform);
+}
 
 

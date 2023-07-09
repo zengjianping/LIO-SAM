@@ -11,8 +11,8 @@
 // Defines LaserCloudRegister
 
 LaserCloudRegister::LaserCloudRegister(const Options& options)
-    : options_(options)
 {
+    options_ = options;
 }
 
 LaserCloudRegister::~LaserCloudRegister()
@@ -33,7 +33,7 @@ void LaserCloudRegister::setSurfFeatureCloud(const pcl::PointCloud<pcl::PointXYZ
     kdtreeSurfCloud_->setInputCloud(surfCloudLast_);
 }
 
-bool LaserCloudRegister::process(const Eigen::Isometry3d& initPose, Eigen::Isometry3d& finalPose)
+bool LaserCloudRegister::process(const EntityPose& poseGuess, EntityPose& poseFinal)
 {
     int numEdgeFeatures = edgeCloudCurr_->points.size();
     int numSurfFeatures = surfCloudCurr_->points.size();
@@ -43,7 +43,7 @@ bool LaserCloudRegister::process(const Eigen::Isometry3d& initPose, Eigen::Isome
         return false;
     }
 
-    if (!preprocess(initPose)) {
+    if (!preprocess(poseGuess)) {
         return false;
     }
 
@@ -63,20 +63,20 @@ bool LaserCloudRegister::process(const Eigen::Isometry3d& initPose, Eigen::Isome
         }
     }
 
-    return postprocess(finalPose);
+    return postprocess(poseFinal);
 }
 
-bool LaserCloudRegister::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegister::preprocess(const EntityPose& poseGuess)
 {
-    finalPose_ = Eigen::Isometry3d::Identity();
+    poseFinal_ = EntityPose();
     poseConverged_ = false;
     poseDegenerated_ = false;
     return true;
 }
 
-bool LaserCloudRegister::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegister::postprocess(EntityPose& poseFinal)
 {
-    finalPose_ = finalPose;
+    poseFinal_ = poseFinal;
     return true;
 }
 
@@ -388,8 +388,8 @@ public:
     virtual ~LaserCloudRegisterCeres();
 
 protected:
-    virtual bool preprocess(const Eigen::Isometry3d& initPose);
-    virtual bool postprocess(Eigen::Isometry3d& finalPose);
+    virtual bool preprocess(const EntityPose& poseGuess);
+    virtual bool postprocess(EntityPose& poseFinal);
     virtual void transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
     virtual bool prepareProcessing();
     virtual void addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
@@ -697,25 +697,24 @@ LaserCloudRegisterCeres::~LaserCloudRegisterCeres()
 {
 }
 
-bool LaserCloudRegisterCeres::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegisterCeres::preprocess(const EntityPose& poseGuess)
 {
-    if (!LaserCloudRegister::preprocess(initPose)) {
+    if (!LaserCloudRegister::preprocess(poseGuess)) {
         return false;
     }
 
-    quaterCurr2Last_ = Eigen::Quaterniond(initPose.rotation());
-    transCurr2Last_ = initPose.translation();
+    quaterCurr2Last_ = poseGuess.orientation;
+    transCurr2Last_ = poseGuess.position;
 
     return true;
 }
 
-bool LaserCloudRegisterCeres::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegisterCeres::postprocess(EntityPose& poseFinal)
 {
-    finalPose = Eigen::Isometry3d::Identity();
-    finalPose.linear() = quaterCurr2Last_.toRotationMatrix();
-    finalPose.translation() = transCurr2Last_;
+    poseFinal.orientation = quaterCurr2Last_;
+    poseFinal.position = transCurr2Last_;
 
-    return LaserCloudRegister::postprocess(finalPose);
+    return LaserCloudRegister::postprocess(poseFinal);
 }
 
 void LaserCloudRegisterCeres::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)
@@ -839,8 +838,8 @@ public:
     virtual ~LaserCloudRegisterNewton();
 
 protected:
-    virtual bool preprocess(const Eigen::Isometry3d& initPose);
-    virtual bool postprocess(Eigen::Isometry3d& finalPose);
+    virtual bool preprocess(const EntityPose& poseGuess);
+    virtual bool postprocess(EntityPose& poseFinal);
     virtual void transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp);
     virtual bool prepareProcessing();
     virtual void addOneEdgeFeatureS(const pcl::PointXYZI& pointOri, const pcl::PointXYZI& pointSel, const Eigen::Vector3d& currPoint,
@@ -873,14 +872,15 @@ LaserCloudRegisterNewton::~LaserCloudRegisterNewton()
 {
 }
 
-bool LaserCloudRegisterNewton::preprocess(const Eigen::Isometry3d& initPose)
+bool LaserCloudRegisterNewton::preprocess(const EntityPose& poseGuess)
 {
-    if (!LaserCloudRegister::preprocess(initPose)) {
+    if (!LaserCloudRegister::preprocess(poseGuess)) {
         return false;
     }
 
     Eigen::Affine3f affinePose = Eigen::Affine3f::Identity();
-    affinePose.matrix() = initPose.matrix().cast<float>();
+    affinePose.linear() = poseGuess.orientation.toRotationMatrix().cast<float>();
+    affinePose.translation() = poseGuess.position.cast<float>();
     affine3fToTrans(affinePose, transformTobeMapped_);
     
     return true;
@@ -895,17 +895,18 @@ float constraintTransformation(float value, float limit)
     return value;
 }
 
-bool LaserCloudRegisterNewton::postprocess(Eigen::Isometry3d& finalPose)
+bool LaserCloudRegisterNewton::postprocess(EntityPose& poseFinal)
 {
     transformTobeMapped_[0] = constraintTransformation(transformTobeMapped_[0], options_.rotation_tollerance);
     transformTobeMapped_[1] = constraintTransformation(transformTobeMapped_[1], options_.rotation_tollerance);
     transformTobeMapped_[5] = constraintTransformation(transformTobeMapped_[5], options_.z_tollerance);
 
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
-    finalPose = Eigen::Isometry3d::Identity();
-    finalPose.matrix() = affinePose.matrix().cast<double>();
+    poseFinal = EntityPose();
+    poseFinal.orientation = Eigen::Quaterniond(affinePose.rotation().cast<double>());
+    poseFinal.position = affinePose.translation().cast<double>();
 
-    return LaserCloudRegister::postprocess(finalPose);
+    return LaserCloudRegister::postprocess(poseFinal);
 }
 
 void LaserCloudRegisterNewton::transformPointToLast(const pcl::PointXYZI& inp, pcl::PointXYZI& outp)

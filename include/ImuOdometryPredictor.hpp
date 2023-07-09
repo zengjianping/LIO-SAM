@@ -9,36 +9,36 @@ class ImuOdometryPredictor
 {
 public:
     struct Options {
-        float imuRate;
-        float imuAccNoise;
-        float imuGyrNoise;
-        float imuAccBiasN;
-        float imuGyrBiasN;
-        float imuGravity;
+        float imuRate = 500;
+        float imuAccNoise = 3.9939570888238808e-03;
+        float imuGyrNoise = 1.5636343949698187e-03;
+        float imuAccBiasN = 6.4356659353532566e-05;
+        float imuGyrBiasN = 3.5640318696367613e-05;
+        float imuGravity = 9.80511;
     };
 
 public:
     ImuOdometryPredictor(const Options& options);
 
 public:
-    bool reset(const gtsam::Pose3& odomPose, double odomTime, bool degenerate);
-    bool predict(const ImuSample& imuSample, gtsam::NavState& imuState);
+    bool reset(const EntityPose& odomPose, bool degenerate);
+    bool predict(const EntityPose& imuSample, EntityPose& imuPose);
 
 protected:
-    gtsam::NavState predictOdometry(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const ImuSample& imuSample);
-    bool resetImuIntegrator(const gtsam::imuBias::ConstantBias& prevBias, const std::vector<ImuSample>& imuSamples=std::vector<ImuSample>(), double lastImuTime=-1);
+    gtsam::NavState predictOdometry(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const EntityPose& imuSample);
+    bool resetImuIntegrator(const gtsam::imuBias::ConstantBias& prevBias, const std::vector<EntityPose>& imuSamples=std::vector<EntityPose>(), double lastImuTime=-1);
     void resetGraph();
     void resetStatus();
-    bool optimizeOdometry(const gtsam::Pose3& odomPose, const std::vector<ImuSample>& imuSamples, bool degenerate);
-    bool startOptimize(const gtsam::Pose3& odomPose, const std::vector<ImuSample>& imuSamples);
+    bool optimizeOdometry(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate);
+    bool startOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples);
     bool restartOptimize();
-    bool processOptimize(const gtsam::Pose3& odomPose, const std::vector<ImuSample>& imuSamples, bool degenerate);
+    bool processOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate);
     bool failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur);
 
 protected:
     Options options_; // 算法参数
 
-    std::deque<ImuSample> imuQueue_;
+    std::deque<EntityPose> imuQueue_;
 
     bool systemInitialized_; // 标志系统初始化，主要是用来初始化gtsam
     bool doneFirstOpt_; // 第一帧初始化标签

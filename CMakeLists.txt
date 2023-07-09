@@ -89,6 +89,7 @@ link_directories(
 # Utilities library
 add_library(${PROJECT_NAME}_utilities STATIC
   src/ScanContext/Scancontext.cpp
+  src/CommonDefine.cpp
   src/CommonUtility.cpp
   src/CoreUtility.cpp
   src/NodeUtility.cpp

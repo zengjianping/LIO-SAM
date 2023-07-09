@@ -3,8 +3,13 @@
 
 
 LaserCloudExtractor::LaserCloudExtractor(const Options& options)
-    : options_(options)
 {
+    options_  = options;
+
+    timeScanCur_ = 0;
+    timeScanEnd_ = 0;
+    deskewPointCloud_ = false;
+
     float surfLeafSize = options_.surfLeafSize;
     downSizeFilter_.setLeafSize(surfLeafSize, surfLeafSize, surfLeafSize);
 
@@ -22,7 +27,7 @@ LaserCloudExtractor::~LaserCloudExtractor()
     delete cloudLabel_;
 }
 
-bool LaserCloudExtractor::process(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, Eigen::Isometry3d *skewPose)
+bool LaserCloudExtractor::process(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, EntityPose *skewPose)
 {
     prepareProcessing(laserCloud, laserTime, skewPose);
 
@@ -33,7 +38,7 @@ bool LaserCloudExtractor::process(const pcl::PointCloud<PointXYZIRT>::Ptr& laser
     return true;
 }
 
-void LaserCloudExtractor::prepareProcessing(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, Eigen::Isometry3d *skewPose)
+void LaserCloudExtractor::prepareProcessing(const pcl::PointCloud<PointXYZIRT>::Ptr& laserCloud, double laserTime, EntityPose *skewPose)
 {
     laserCloud_.reset(new pcl::PointCloud<PointXYZIRT>());
     fullCloud_.reset(new pcl::PointCloud<PointType>());
@@ -55,8 +60,8 @@ void LaserCloudExtractor::prepareProcessing(const pcl::PointCloud<PointXYZIRT>::
     deskewPointCloud_ = false;
     if (skewPose) {
         deskewPointCloud_ = true;
-        quaterCurr2Last_ = Eigen::Quaterniond(skewPose->rotation());
-        transCurr2Last_ = skewPose->translation();
+        quaterCurr2Last_ = skewPose->orientation;
+        transCurr2Last_ = skewPose->position;
     }
 }
 

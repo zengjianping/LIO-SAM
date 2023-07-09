@@ -1,10 +1,34 @@
 #ifndef _CORE_UTILITY_H_
 #define _CORE_UTILITY_H_
 
-#include "CommonUtility.hpp"
+#include "CommonDefine.hpp"
 
 using namespace std;
 
+
+class ImuSample
+{
+public:
+    ImuSample();
+
+public:
+    double timestamp_;
+    Eigen::Vector3d linearAcceleration_;
+    Eigen::Vector3d angularVelocity_;
+    Eigen::Vector3d angularRPY_;
+};
+
+class PoseSample
+{
+public:
+    PoseSample();
+
+public:
+    double timestamp_;
+    Eigen::Vector3d position_;
+    Eigen::Vector3d angularRPY_;
+    boost::array<double, 36> covariance_;
+};
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN };
 
