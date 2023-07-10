@@ -43,11 +43,108 @@ MapCloudBuilder::MapCloudBuilder(const Options& options)
 
 void MapCloudBuilder::processLoopClosure()
 {
+    if (!options_.useLoopClosure)
+        return;
+
     std::pair<double,double> loopInfo, *pLoopInfo=nullptr;
     if (consumeLoopInfo(loopInfo)) {
         pLoopInfo = &loopInfo;
     }
-    laserLoopDetector_->process(laserTimeCurr_, mapPoseKeyFrames_, loopClosureItems_, pLoopInfo);
+
+    int laserTimeCurr;
+    MapPoseFrameVecPtr mapPoseKeyFrames;
+    mapPoseKeyFrames.reset(new MapPoseFrameVec());
+    LoopClosureItemVecPtr loopClosureItems;
+    loopClosureItems.reset(new LoopClosureItemVec());
+
+    {
+        std::lock_guard<std::mutex> lock(mtxCloud_);
+        laserTimeCurr = laserTimeCurr_;
+        *mapPoseKeyFrames = *mapPoseKeyFrames;
+    }
+    laserLoopDetector_->process(laserTimeCurr, mapPoseKeyFrames, loopClosureItems, pLoopInfo);
+    {
+        std::lock_guard<std::mutex> lock(mtxCloud_);
+        *loopClosureItems_ = *loopClosureItems;
+    }
+}
+
+bool MapCloudBuilder::consumeLoopInfo(std::pair<double,double>& info)
+{
+    std::lock_guard<std::mutex> lock(mtxLoop_);
+
+    if (!loopInfoQueue_.empty()) {
+        info = loopInfoQueue_.front();
+        return true;
+    }
+    
+    return false;
+}
+
+void MapCloudBuilder::processLoopInfo(const std::pair<double,double>& info)
+{
+    if (!options_.useLoopClosure)
+        return;
+
+    std::lock_guard<std::mutex> lock(mtxLoop_);
+
+    loopInfoQueue_.push_back(info);
+    while (loopInfoQueue_.size() > 5)
+        loopInfoQueue_.pop_front();
+}
+
+void MapCloudBuilder::processGpsSample(const EntityPose& gpsSample)
+{
+    if (!options_.useGpsData)
+        return;
+
+    std::lock_guard<std::mutex> lock(mtxGps_);
+    gpsSampleQueue_.push_back(gpsSample);
+}
+
+void MapCloudBuilder::consumeGpsSamples(double laserTime, std::vector<EntityPose>& gpsSamples)
+{
+    if (!options_.useGpsData)
+        return;
+
+    std::lock_guard<std::mutex> lock(mtxGps_);
+
+    while (!gpsSampleQueue_.empty()) {
+        if (gpsSampleQueue_.front().timestamp < laserTime - 0.2)
+            gpsSampleQueue_.pop_front();
+        else
+            break;
+    }
+
+    for (int i = 0; i < (int)gpsSampleQueue_.size(); ++i) {
+        const EntityPose& gpsample = gpsSampleQueue_[i];
+        if (gpsample.timestamp > laserTime + 0.2)
+            break;
+        gpsSamples.push_back(gpsample);
+    }
+}
+
+void MapCloudBuilder::processImuSample(const EntityPose& imuSample)
+{
+    if (!options_.useImuData)
+        return;
+
+    std::lock_guard<std::mutex> lock(mtxImu_);
+
+    EntityPose imuPose;
+    if (imuOdometryPredictor_->predict(imuSample, imuPose)) {
+        imuOdomQueue_.push_back(imuPose);
+    }
+}
+
+void MapCloudBuilder::resetImuOdometry()
+{
+    if (!options_.useImuData)
+        return;
+
+    std::lock_guard<std::mutex> lock(mtxImu_);
+
+    imuOdometryPredictor_->reset(laserPoseCurr_, false);
 }
 
 bool MapCloudBuilder::processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr laserCloud, double laserTime)
@@ -61,7 +158,7 @@ bool MapCloudBuilder::processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr 
     laserTimeCurr_ = laserTime;
     laserCloudIn_ = laserCloud;
 
-    ExtractPointCloud();
+    extractPointCloud();
 
     updateInitialGuess();
 
@@ -70,15 +167,19 @@ bool MapCloudBuilder::processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr 
     scan2MapOptimization();
 
     if (saveFrame()) {
-        saveKeyFramesAndFactor();
+        saveKeyFrames();
+        if (options_.usePoseOptimize)
+            optimizeKeyFrames();
     }
+
+    cloudPostprocess();
 
     laserTimePrev_ = laserTimeCurr_;
 
     return true;
 }
 
-void MapCloudBuilder::ExtractPointCloud()
+void MapCloudBuilder::extractPointCloud()
 {
     EntityPose *skewPose = nullptr;
     // TODO...
@@ -204,12 +305,13 @@ void MapCloudBuilder::extractSurroundingKeyFrames()
 
 void MapCloudBuilder::scan2MapOptimization()
 {
-    if (mapPoseKeyFrames_->empty())
-        return;
-
-    laserCloudRegister_->setEdgeFeatureCloud(laserCloudCornerLastDS_, laserCloudCornerFromMapDS_);
-    laserCloudRegister_->setSurfFeatureCloud(laserCloudSurfLastDS_, laserCloudSurfFromMapDS_);
-    laserCloudRegister_->process(laserPoseGuess_, laserPoseCurr_);
+    if (!mapPoseKeyFrames_->empty()) {
+        laserCloudRegister_->setEdgeFeatureCloud(laserCloudCornerLastDS_, laserCloudCornerFromMapDS_);
+        laserCloudRegister_->setSurfFeatureCloud(laserCloudSurfLastDS_, laserCloudSurfFromMapDS_);
+        laserCloudRegister_->process(laserPoseGuess_, laserPoseCurr_);
+    }
+    laserPoseCurr_.index = mapPoseKeyFrames_->size();
+    laserPoseCurr_.timestamp = laserTimeCurr_;
 }
 
 bool MapCloudBuilder::saveFrame()
@@ -244,7 +346,7 @@ bool MapCloudBuilder::saveFrame()
     return true;
 }
 
-void MapCloudBuilder::saveKeyFramesAndFactor()
+void MapCloudBuilder::saveKeyFrames()
 {
     // save all the received edge and surf points
     pcl::PointCloud<PointType>::Ptr thisCornerKeyFrame(new pcl::PointCloud<PointType>());
@@ -258,13 +360,14 @@ void MapCloudBuilder::saveKeyFramesAndFactor()
     //frame.pose6D.intensity = mapPoseKeyFrames_->size();
     //frame.pose6D.time = laserTimeCurr_;
     frame.pose = laserPoseCurr_;
-    frame.pose.index = mapPoseKeyFrames_->size();
-    frame.pose.timestamp = laserTimeCurr_;
     frame.extractedCloud = extractedCloud_;
     frame.cornerCloud = thisCornerKeyFrame;
     frame.surfCloud = thisSurfKeyFrame;
     mapPoseKeyFrames_->push_back(frame);
+}
 
+void MapCloudBuilder::optimizeKeyFrames()
+{
     std::vector<EntityPose> gpsSamples;
     consumeGpsSamples(laserTimeCurr_, gpsSamples);
 
@@ -275,65 +378,12 @@ void MapCloudBuilder::saveKeyFramesAndFactor()
         // clear map cache
         laserCloudMapContainer_.clear();
     }
-
-    imuOdometryPredictor_->reset(laserPoseCurr_, false);
+    laserPoseCurr_ = mapPoseKeyFrames_->back().pose;
 }
 
-void MapCloudBuilder::processImuSample(const EntityPose& imuSample)
+void MapCloudBuilder::cloudPostprocess()
 {
-    std::lock_guard<std::mutex> lock(mtxImu_);
-
-    EntityPose imuPose;
-    if (imuOdometryPredictor_->predict(imuSample, imuPose)) {
-        imuOdomQueue_.push_back(imuPose);
-    }
-}
-
-void MapCloudBuilder::processGpsSample(const EntityPose& gpsSample)
-{
-    std::lock_guard<std::mutex> lock(mtxGps_);
-    gpsSampleQueue_.push_back(gpsSample);
-}
-
-void MapCloudBuilder::consumeGpsSamples(double laserTime, std::vector<EntityPose>& gpsSamples)
-{
-    std::lock_guard<std::mutex> lock(mtxGps_);
-
-    while (!gpsSampleQueue_.empty()) {
-        if (gpsSampleQueue_.front().timestamp < laserTime - 0.2)
-            gpsSampleQueue_.pop_front();
-        else
-            break;
-    }
-
-    for (int i = 0; i < (int)gpsSampleQueue_.size(); ++i) {
-        const EntityPose& gpsample = gpsSampleQueue_[i];
-        if (gpsample.timestamp > laserTime + 0.2)
-            break;
-        gpsSamples.push_back(gpsample);
-    }
-}
-
-void MapCloudBuilder::processLoopInfo(const std::pair<double,double>& info)
-{
-    std::lock_guard<std::mutex> lock(mtxLoop_);
-
-    loopInfoQueue_.push_back(info);
-    while (loopInfoQueue_.size() > 5)
-        loopInfoQueue_.pop_front();
-}
-
-bool MapCloudBuilder::consumeLoopInfo(std::pair<double,double>& info)
-{
-    std::lock_guard<std::mutex> lock(mtxLoop_);
-
-    if (!loopInfoQueue_.empty()) {
-        info = loopInfoQueue_.front();
-        return true;
-    }
-    
-    return false;
-
+    resetImuOdometry();
 }
 
 bool MapCloudBuilder::saveCloudMap(const string& dataDir, float mapResolution)

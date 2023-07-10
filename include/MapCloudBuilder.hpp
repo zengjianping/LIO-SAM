@@ -20,7 +20,14 @@ public:
         LaserLoopDetector::Options optionLoopDetector;
         MapPoseOptimizer::Options optionPoseOptimizer;
 
-        double mappingProcessInterval = 0.15;
+        // function switch
+        bool useLoopClosure = true;
+        bool usePoseOptimize = true;
+        bool useImuData = true;
+        bool useGpsData = false;
+
+        // processing interval
+        double mappingProcessInterval = 0.0;
         double mappingIntervalTime = -1.0;
 
         // voxel filter paprams
@@ -43,25 +50,28 @@ public:
 
 public:
     void processLoopClosure();
-    bool processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr laserCloud, double laserTime);
-    void processImuSample(const EntityPose& imuSample);
-    void processGpsSample(const EntityPose& gpsSample);
     void processLoopInfo(const std::pair<double,double>& info);
+    void processGpsSample(const EntityPose& gpsSample);
+    void processImuSample(const EntityPose& imuSample);
+    bool processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr laserCloud, double laserTime);
     bool saveCloudMap(const string& dataDir, float mapResolution);
 
 protected:
-    void consumeGpsSamples(double laserTime, std::vector<EntityPose>& gpsSamples);
     bool consumeLoopInfo(std::pair<double,double>& info);
+    void consumeGpsSamples(double laserTime, std::vector<EntityPose>& gpsSamples);
+    void resetImuOdometry();
 
 protected:
-    void ExtractPointCloud();
+    void extractPointCloud();
     void updateInitialGuess();
     void extractSurroundingKeyFrames();
     void _extractNearby();
     void _extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract);
     void scan2MapOptimization();
     bool saveFrame();
-    void saveKeyFramesAndFactor();
+    void saveKeyFrames();
+    void optimizeKeyFrames();
+    void cloudPostprocess();
 
 protected:
     Options options_; // 算法参数
