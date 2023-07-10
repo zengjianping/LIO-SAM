@@ -154,6 +154,12 @@ public:
     Eigen::Affine3f lastImuPreTransformation;
 };
 
+inline Eigen::Affine3f trans2Affine3f(float transformIn[])
+{
+    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
+}
+
+
 #endif // __MAP_BUILDING_H__
 
 

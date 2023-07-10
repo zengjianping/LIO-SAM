@@ -118,7 +118,7 @@ void MapCloudBuilder::_extractNearby()
     pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
     cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
     for (const MapPoseFrame& frame : *mapPoseKeyFrames_) {
-        cloudKeyPoses3D->points.push_back(pose3DFromPose6D(frame.pose6D));
+        cloudKeyPoses3D->points.push_back(pose3DFromPose(frame.pose));
     }
 
     // extract all the nearby key poses and downsample them
@@ -141,9 +141,9 @@ void MapCloudBuilder::_extractNearby()
     // also extract some latest key frames in case the robot rotates in one position
     int numPoses = mapPoseKeyFrames_->size();
     for (int i = numPoses-1; i >= 0; --i) {
-        const PointTypePose& pose6D = (*mapPoseKeyFrames_)[i].pose6D;
-        if (laserTimeCurr_ - pose6D.time < 10.0)
-            surroundingKeyPosesDS->push_back(pose3DFromPose6D(pose6D));
+        const EntityPose& pose = (*mapPoseKeyFrames_)[i].pose;
+        if (laserTimeCurr_ - pose.timestamp < 10.0)
+            surroundingKeyPosesDS->push_back(pose3DFromPose(pose));
         else
             break;
     }
@@ -158,7 +158,7 @@ void MapCloudBuilder::_extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtra
     laserCloudSurfFromMap_->clear();
 
     const MapPoseFrame& frame = mapPoseKeyFrames_->back();
-    PointType pose3D = pose3DFromPose6D(frame.pose6D);
+    PointType pose3D = pose3DFromPose(frame.pose);
 
     for (int i = 0; i < (int)cloudToExtract->size(); ++i) {
         if (pointDistance(cloudToExtract->points[i], pose3D) > options_.surroundingKeyframeSearchRadius)
@@ -173,8 +173,9 @@ void MapCloudBuilder::_extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtra
         else {
             // transformed cloud not available
             MapPoseFrame& frame = (*mapPoseKeyFrames_)[thisKeyInd];
-            pcl::PointCloud<PointType> laserCloudCornerTemp = *transformPointCloud(frame.cornerCloud, &frame.pose6D);
-            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(frame.surfCloud, &frame.pose6D);
+            PointTypePose pose6D = pose6DFromPose(frame.pose);
+            pcl::PointCloud<PointType> laserCloudCornerTemp = *transformPointCloud(frame.cornerCloud, &pose6D);
+            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(frame.surfCloud, &pose6D);
             *laserCloudCornerFromMap_ += laserCloudCornerTemp;
             *laserCloudSurfFromMap_  += laserCloudSurfTemp;
             laserCloudMapContainer_[thisKeyInd] = make_pair(laserCloudCornerTemp, laserCloudSurfTemp);
@@ -216,17 +217,22 @@ bool MapCloudBuilder::saveFrame()
     if (mapPoseKeyFrames_->empty())
         return true;
 
-    const PointTypePose& pose6D = mapPoseKeyFrames_->back().pose6D;
+    //const PointTypePose& pose6D = mapPoseKeyFrames_->back().pose6D;
+    const EntityPose& pose = mapPoseKeyFrames_->back().pose;
     if (options_.mappingIntervalTime > 0.0) {
-        if (laserTimeCurr_ - pose6D.time > options_.mappingIntervalTime)
+        //if (laserTimeCurr_ - pose6D.time > options_.mappingIntervalTime)
+        if (laserTimeCurr_ - pose.timestamp > options_.mappingIntervalTime)
             return true;
     }
 
-    Eigen::Affine3f transStart = pclPointToAffine3f(pose6D);
-    Eigen::Affine3f transFinal = laserPoseCurr_.toAffine().cast<float>();
-    Eigen::Affine3f transBetween = transStart.inverse() * transFinal;
-    float x, y, z, roll, pitch, yaw;
-    pcl::getTranslationAndEulerAngles(transBetween, x, y, z, roll, pitch, yaw);
+    //Eigen::Affine3f transStart = pclPointToAffine3f(pose6D);
+    //Eigen::Affine3f transFinal = laserPoseCurr_.toAffine().cast<float>();
+    //Eigen::Affine3f transBetween = transStart.inverse() * transFinal;
+    //float x, y, z, roll, pitch, yaw;
+    //pcl::getTranslationAndEulerAngles(transBetween, x, y, z, roll, pitch, yaw);
+    EntityPose transIncr = pose.betweenTo(laserPoseCurr_);
+    float roll = transIncr.angular.x(), pitch = transIncr.angular.y(), yaw = transIncr.angular.z();
+    float x = transIncr.position.x(), y = transIncr.position.y(), z = transIncr.position.z();
 
     if (abs(roll) < options_.surroundingkeyframeAddingAngleThreshold &&
         abs(pitch) < options_.surroundingkeyframeAddingAngleThreshold && 
@@ -248,7 +254,12 @@ void MapCloudBuilder::saveKeyFramesAndFactor()
 
     // save key frame cloud
     MapPoseFrame frame;
-    frame.pose6D = isometry3dToPclPoint(laserPoseCurr_.toIsometry());
+    //frame.pose6D = isometry3dToPclPoint(laserPoseCurr_.toIsometry());
+    //frame.pose6D.intensity = mapPoseKeyFrames_->size();
+    //frame.pose6D.time = laserTimeCurr_;
+    frame.pose = laserPoseCurr_;
+    frame.pose.index = mapPoseKeyFrames_->size();
+    frame.pose.timestamp = laserTimeCurr_;
     frame.extractedCloud = extractedCloud_;
     frame.cornerCloud = thisCornerKeyFrame;
     frame.surfCloud = thisSurfKeyFrame;
@@ -346,8 +357,8 @@ bool MapCloudBuilder::saveCloudMap(const string& dataDir, float mapResolution)
     pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
     cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
     for (const MapPoseFrame& frame : *mapPoseKeyFrames_) {
-        cloudKeyPoses3D->points.push_back(pose3DFromPose6D(frame.pose6D));
-        cloudKeyPoses6D->points.push_back(frame.pose6D);
+        cloudKeyPoses3D->points.push_back(pose3DFromPose(frame.pose));
+        cloudKeyPoses6D->points.push_back(pose6DFromPose(frame.pose));
     }
     // save key frame transformations
     pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
@@ -359,7 +370,7 @@ bool MapCloudBuilder::saveCloudMap(const string& dataDir, float mapResolution)
     pcl::PointCloud<PointType>::Ptr globalSurfCloud(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalSurfCloudDS(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapCloud(new pcl::PointCloud<PointType>());
-    for (int i = 0; i < (int)cloudKeyPoses3D->size(); i++) {
+    for (int i = 0; i < (int)cloudKeyPoses6D->size(); i++) {
         *globalCornerCloud += *transformPointCloud((*mapPoseKeyFrames_)[i].cornerCloud, &cloudKeyPoses6D->points[i]);
         *globalSurfCloud   += *transformPointCloud((*mapPoseKeyFrames_)[i].surfCloud, &cloudKeyPoses6D->points[i]);
         cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloudKeyPoses6D->size() << " ...";

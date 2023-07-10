@@ -67,12 +67,14 @@ bool LaserLoopDetector::performRSLoopClosure(std::pair<double,double>* loopInfo)
     Eigen::Affine3f correctionLidarFrame;
     correctionLidarFrame = icp.getFinalTransformation();
     // transform from world origin to wrong pose
-    Eigen::Affine3f tWrong = pclPointToAffine3f((*mapPoseFrames_)[loopKeyCur].pose6D);
+    //Eigen::Affine3f tWrong = pclPointToAffine3f((*mapPoseFrames_)[loopKeyCur].pose6D);
+    Eigen::Affine3f tWrong = (*mapPoseFrames_)[loopKeyCur].pose.toAffine().cast<float>();
     // transform from world origin to corrected pose
     Eigen::Affine3f tCorrect = correctionLidarFrame * tWrong;// pre-multiplying -> successive rotation about a fixed frame
     pcl::getTranslationAndEulerAngles (tCorrect, x, y, z, roll, pitch, yaw);
     gtsam::Pose3 poseFrom = gtsam::Pose3(gtsam::Rot3::RzRyRx(roll, pitch, yaw), gtsam::Point3(x, y, z));
-    gtsam::Pose3 poseTo = pclPointTogtsamPose3((*mapPoseFrames_)[loopKeyPre].pose6D);
+    //gtsam::Pose3 poseTo = pclPointTogtsamPose3((*mapPoseFrames_)[loopKeyPre].pose6D);
+    gtsam::Pose3 poseTo = (*mapPoseFrames_)[loopKeyPre].pose.toGtsamPose();
     gtsam::Vector Vector6(6);
     float noiseScore = icp.getFitnessScore();
     Vector6 << noiseScore, noiseScore, noiseScore, noiseScore, noiseScore, noiseScore;
@@ -231,14 +233,14 @@ bool LaserLoopDetector::detectLoopClosureDistance(int *latestID, int *closestID)
     pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
     cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
     for (const MapPoseFrame& frame : *mapPoseFrames_) {
-        cloudKeyPoses3D->points.push_back(pose3DFromPose6D(frame.pose6D));
+        cloudKeyPoses3D->points.push_back(pose3DFromPose(frame.pose));
     }
     kdtreeHistoryKeyPoses->setInputCloud(cloudKeyPoses3D);
     kdtreeHistoryKeyPoses->radiusSearch(cloudKeyPoses3D->back(), options_.historyKeyframeSearchRadius, pointSearchIndLoop, pointSearchSqDisLoop, 0);
     
     for (int i = 0; i < (int)pointSearchIndLoop.size(); ++i) {
         int id = pointSearchIndLoop[i];
-        if (abs((*mapPoseFrames_)[id].pose6D.time - laserCloudTime_) > options_.historyKeyframeSearchTimeDiff) {
+        if (abs((*mapPoseFrames_)[id].pose.timestamp - laserCloudTime_) > options_.historyKeyframeSearchTimeDiff) {
             loopKeyPre = id;
             break;
         }
@@ -273,8 +275,8 @@ bool LaserLoopDetector::detectLoopClosureExternal(std::pair<double,double>* loop
     // latest key
     loopKeyCur = cloudSize - 1;
     for (int i = cloudSize - 1; i >= 0; --i) {
-        if ((*mapPoseFrames_)[i].pose6D.time >= loopTimeCur)
-            loopKeyCur = round((*mapPoseFrames_)[i].pose6D.intensity);
+        if ((*mapPoseFrames_)[i].pose.timestamp >= loopTimeCur)
+            loopKeyCur = round((*mapPoseFrames_)[i].pose.index);
         else
             break;
     }
@@ -282,8 +284,8 @@ bool LaserLoopDetector::detectLoopClosureExternal(std::pair<double,double>* loop
     // previous key
     loopKeyPre = 0;
     for (int i = 0; i < cloudSize; ++i) {
-        if ((*mapPoseFrames_)[i].pose6D.time <= loopTimePre)
-            loopKeyPre = round((*mapPoseFrames_)[i].pose6D.intensity);
+        if ((*mapPoseFrames_)[i].pose.timestamp <= loopTimePre)
+            loopKeyPre = round((*mapPoseFrames_)[i].pose.index);
         else
             break;
     }
@@ -311,8 +313,9 @@ void LaserLoopDetector::loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& n
         if (keyNear < 0 || keyNear >= cloudSize )
             continue;
         int select_loop_index = (loop_index != -1) ? loop_index : keyNear;
-        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].cornerCloud, &(*mapPoseFrames_)[select_loop_index].pose6D);
-        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].surfCloud, &(*mapPoseFrames_)[select_loop_index].pose6D);
+        PointTypePose pose6D = pose6DFromPose((*mapPoseFrames_)[select_loop_index].pose);
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].cornerCloud, &pose6D);
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].surfCloud, &pose6D);
     }
 
     if (nearKeyframes->empty())

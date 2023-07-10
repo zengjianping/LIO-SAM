@@ -92,97 +92,19 @@ typedef pcl::PointXYZI PointType;
 
 typedef PointXYZIRPYT PointTypePose;
 
+template<typename T>
+inline float pointDistance(const T& p)
+{
+    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+}
+
+template<typename T>
+inline float pointDistance(const T& p1, const T& p2)
+{
+    return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
+}
 
 pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn);
-PointTypePose trans2PointTypePose(float transformIn[]);
-
-inline gtsam::Pose3 pclPointTogtsamPose3(const PointTypePose& thisPoint)
-{
-    return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
-                        gtsam::Point3(double(thisPoint.x), double(thisPoint.y), double(thisPoint.z)));
-}
-
-inline gtsam::Pose3 trans2gtsamPose(float transformIn[])
-{
-    return gtsam::Pose3(gtsam::Rot3::RzRyRx(transformIn[0], transformIn[1], transformIn[2]), 
-                        gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
-}
-
-inline gtsam::Pose3 poseEigen2Gtsam(const Eigen::Isometry3d& eigenPose)
-{
-    return gtsam::Pose3(eigenPose.matrix());
-}
-
-inline Eigen::Affine3f pclPointToAffine3f(const PointTypePose& thisPoint)
-{ 
-    return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
-}
-
-inline PointTypePose affine3fToPclPoint(const Eigen::Affine3f& affinePose)
-{
-    PointTypePose thisPoint;
-    pcl::getTranslationAndEulerAngles(affinePose, thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
-    return thisPoint;
-}
-
-inline Eigen::Isometry3d pclPointToIsometry3d(const PointTypePose& thisPoint)
-{ 
-    Eigen::Affine3f affine3f = pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
-    return Eigen::Isometry3d(affine3f.matrix().cast<double>());
-}
-
-inline PointTypePose isometry3dToPclPoint(const Eigen::Isometry3d& isometeryPose)
-{
-    PointTypePose thisPoint;
-    Eigen::Affine3f affinePose(isometeryPose.matrix().cast<float>());
-    pcl::getTranslationAndEulerAngles(affinePose, thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
-    return thisPoint;
-}
-
-inline void affine3fToTrans(const Eigen::Affine3f& affinePose, float transformIn[])
-{
-    pcl::getTranslationAndEulerAngles(affinePose, transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-}
-
-inline Eigen::Affine3f transToAffine3f(float transformIn[])
-{
-    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-}
-
-inline Eigen::Affine3f trans2Affine3f(float transformIn[])
-{
-    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
-}
-
-inline float pointDistance(const PointTypePose& p)
-{
-    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-}
-
-inline float pointDistance(const PointTypePose& p1, const PointTypePose& p2)
-{
-    return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
-}
-
-inline float pointDistance(const PointType& p)
-{
-    return sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-}
-
-inline float pointDistance(const PointType& p1, const PointType& p2)
-{
-    return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y-p2.y)*(p1.y-p2.y) + (p1.z-p2.z)*(p1.z-p2.z));
-}
-
-inline PointType pose3DFromPose6D(const PointTypePose& pose6D)
-{
-    PointType pose3D;
-    pose3D.x = pose6D.x;
-    pose3D.y = pose6D.y;
-    pose3D.z = pose6D.z;
-    pose3D.intensity = pose6D.intensity;
-    return pose3D;
-}
 
 
 #endif // _COMMON_DEFINE_H_

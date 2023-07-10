@@ -2,9 +2,51 @@
 #include "CommonUtility.hpp"
 
 
+Eigen::Quaterniond eulerAngleToQuaternion(double roll, double pitch, double yaw) // roll (x), pitch (Y), yaw (z)
+{
+    // Abbreviations for the various angular functions
+    double cr = cos(roll * 0.5);
+    double sr = sin(roll * 0.5);
+    double cp = cos(pitch * 0.5);
+    double sp = sin(pitch * 0.5);
+    double cy = cos(yaw * 0.5);
+    double sy = sin(yaw * 0.5);
+
+    Eigen::Quaterniond q;
+    q.w() = cr * cp * cy + sr * sp * sy;
+    q.x() = sr * cp * cy - cr * sp * sy;
+    q.y() = cr * sp * cy + sr * cp * sy;
+    q.z() = cr * cp * sy - sr * sp * cy;
+
+    return q;
+}
+
+// this implementation assumes normalized quaternion
+// converts to Euler angles in 3-2-1 sequence
+void quaternionToEulerAngle(const Eigen::Quaterniond& q, double& roll, double& pitch, double& yaw)
+{
+    double w = q.w(), x = q.x(), y = q.y(), z = q.z();
+
+    // roll (x-axis rotation)
+    double sinr_cosp = 2 * (w * x + y * z);
+    double cosr_cosp = 1 - 2 * (x * x + y * y);
+    roll = std::atan2(sinr_cosp, cosr_cosp);
+
+    // pitch (y-axis rotation)
+    double sinp = std::sqrt(1 + 2 * (w * y - x * z));
+    double cosp = std::sqrt(1 - 2 * (w * y - x * z));
+    pitch = 2 * std::atan2(sinp, cosp) - M_PI / 2;
+
+    // yaw (z-axis rotation)
+    double siny_cosp = 2 * (w * z + x * y);
+    double cosy_cosp = 1 - 2 * (y * y + z * z);
+    yaw = std::atan2(siny_cosp, cosy_cosp);
+}
+
 void EntityPose::init()
 {
     timestamp = -1;
+    index = -1;
     orientation = Eigen::Quaterniond::Identity();
     position = Eigen::Vector3d(0,0,0);
     angular = Eigen::Vector3d(0,0,0);
@@ -14,23 +56,42 @@ void EntityPose::init()
     //covariance;
 }
 
+void EntityPose::calculateAngular()
+{
+    angular = orientation.toRotationMatrix().eulerAngles(0,1,2);
+}
+
 EntityPose::EntityPose()
 {
     init();
 }
 
+EntityPose::EntityPose(const Eigen::Quaterniond& _orientation, const Eigen::Vector3d& _position)
+{
+    init();
+    orientation = _orientation;
+    position = _position;
+    calculateAngular();
+}
+
 EntityPose::EntityPose(const Eigen::Isometry3d& transform)
 {
     init();
-    orientation = Eigen::Quaterniond(transform.rotation());
+    Eigen::Matrix3d rotmat = transform.rotation();
+    orientation = Eigen::Quaterniond(rotmat);
     position = transform.translation();
+    //angular = rotmat.eulerAngles(0,1,2);
+    calculateAngular();
 }
 
 EntityPose::EntityPose(const Eigen::Affine3d& transform)
 {
     init();
-    orientation = Eigen::Quaterniond(transform.rotation());
+    Eigen::Matrix3d rotmat = transform.rotation();
+    orientation = Eigen::Quaterniond(rotmat);
     position = transform.translation();
+    //angular = rotmat.eulerAngles(0,1,2);
+    calculateAngular();
 }
 
 EntityPose::EntityPose(const gtsam::Pose3& transform)
@@ -38,6 +99,8 @@ EntityPose::EntityPose(const gtsam::Pose3& transform)
     init();
     orientation = transform.rotation().toQuaternion();
     position = transform.translation();
+    //angular = transform.rotation().rpy();
+    calculateAngular();
 }
 
 EntityPose::EntityPose(const gtsam::NavState& transform)
@@ -45,6 +108,8 @@ EntityPose::EntityPose(const gtsam::NavState& transform)
     init();
     orientation = transform.quaternion();
     position = transform.position();
+    //angular = transform.attitude().rpy();
+    calculateAngular();
 }
 
 Eigen::Isometry3d EntityPose::toIsometry() const
@@ -89,6 +154,31 @@ EntityPose EntityPose::betweenTo(const EntityPose& other) const
 {
     Eigen::Isometry3d transform = toIsometry().inverse() * other.toIsometry();
     return EntityPose(transform);
+}
+
+PointType pose3DFromPose6D(const PointTypePose& pose6D)
+{
+    PointType pose3D;
+    pose3D.x = pose6D.x; pose3D.y = pose6D.y;
+    pose3D.z = pose6D.z; pose3D.intensity = pose6D.intensity;
+    return pose3D;
+}
+
+PointType pose3DFromEntityPose(const EntityPose& pose)
+{
+    PointType pose3D;
+    pose3D.x = pose.position.x(); pose3D.y = pose.position.y();
+    pose3D.z = pose.position.z(); pose3D.intensity = pose.index;
+    return pose3D;
+}
+
+PointTypePose pose6DFromEntityPose(const EntityPose& pose)
+{
+    PointTypePose pose6D;
+    pose6D.x = pose.position.x(); pose6D.y = pose.position.y();
+    pose6D.z = pose.position.z();
+    pose6D.time = pose.timestamp; pose6D.intensity = pose.index;
+    return pose6D;
 }
 
 

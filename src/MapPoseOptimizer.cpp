@@ -30,14 +30,14 @@ void MapPoseOptimizer::addOdomFactor()
     }
     else if (numPoses == 1) {
         gtsam::noiseModel::Diagonal::shared_ptr priorNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
-        gtsam::Pose3 poseCurr = pclPointTogtsamPose3((*mapPoseFrames_)[0].pose6D);
+        gtsam::Pose3 poseCurr = (*mapPoseFrames_)[0].pose.toGtsamPose();
         gtSAMgraph_.add(gtsam::PriorFactor<gtsam::Pose3>(0, poseCurr, priorNoise));
         initialEstimate_.insert(0, poseCurr);
     }
     else {
         gtsam::noiseModel::Diagonal::shared_ptr odometryNoise = gtsam::noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
-        gtsam::Pose3 poseCurr = pclPointTogtsamPose3((*mapPoseFrames_)[numPoses-1].pose6D);
-        gtsam::Pose3 poseFrom = pclPointTogtsamPose3((*mapPoseFrames_)[numPoses-2].pose6D);
+        gtsam::Pose3 poseCurr = (*mapPoseFrames_)[numPoses-1].pose.toGtsamPose();
+        gtsam::Pose3 poseFrom = (*mapPoseFrames_)[numPoses-2].pose.toGtsamPose();
         gtSAMgraph_.add(gtsam::BetweenFactor<gtsam::Pose3>(numPoses-2, numPoses-1, poseFrom.between(poseCurr), odometryNoise));
         initialEstimate_.insert(numPoses-1, poseCurr);
     }
@@ -53,7 +53,9 @@ void MapPoseOptimizer::addGPSFactor(std::vector<EntityPose>& gpsSamples)
     if (numPoses <= 1) {
         return;
     } else {
-        if (pointDistance(mapPoseFrames_->front().pose6D, mapPoseFrames_->back().pose6D) < 5.0)
+        const Eigen::Vector3d& pos1 = mapPoseFrames_->front().pose.position;
+        const Eigen::Vector3d& pos2 = mapPoseFrames_->back().pose.position;
+        if ((pos1 - pos2).norm() < 5.0)
             return;
     }
 
@@ -79,7 +81,7 @@ void MapPoseOptimizer::addGPSFactor(std::vector<EntityPose>& gpsSamples)
             float gps_y = thisGPS.position.y();
             float gps_z = thisGPS.position.z();
             if (!options_.useGpsElevation) {
-                gps_z = mapPoseFrames_->back().pose6D.z;
+                gps_z = mapPoseFrames_->back().pose.position.z();
                 noise_z = 0.01;
             }
 
@@ -164,7 +166,7 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
     // cout << "****************************************************" << endl;
     // isamCurrentEstimate.print("Current estimate: ");
 
-    PointTypePose thisPose6D;
+    /*PointTypePose thisPose6D;
     thisPose6D.x = latestEstimate.translation().x();
     thisPose6D.y = latestEstimate.translation().y();
     thisPose6D.z = latestEstimate.translation().z();
@@ -173,7 +175,8 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
     thisPose6D.pitch = latestEstimate.rotation().pitch();
     thisPose6D.yaw = latestEstimate.rotation().yaw();
     thisPose6D.time = laserCloudTime_;
-    mapPoseFrames_->back().pose6D = thisPose6D;
+    mapPoseFrames_->back().pose6D = thisPose6D;*/
+    mapPoseFrames_->back().pose = EntityPose(latestEstimate);
 
     // cout << "****************************************************" << endl;
     // cout << "Pose covariance:" << endl;
@@ -186,13 +189,14 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
         for (int i = 0; i < numPoses; ++i) {
             const gtsam::Pose3& estimate = isamCurrentEstimate.at<gtsam::Pose3>(i);
 
-            PointTypePose& pose6D = (*mapPoseFrames_)[i].pose6D;
+            /*PointTypePose& pose6D = (*mapPoseFrames_)[i].pose6D;
             pose6D.x = estimate.translation().x();
             pose6D.y = estimate.translation().y();
             pose6D.z = estimate.translation().z();
             pose6D.roll = estimate.rotation().roll();
             pose6D.pitch = estimate.rotation().pitch();
-            pose6D.yaw = estimate.rotation().yaw();
+            pose6D.yaw = estimate.rotation().yaw();*/
+            (*mapPoseFrames_)[i].pose = EntityPose(estimate);
         }
     }
 

@@ -711,8 +711,7 @@ bool LaserCloudRegisterCeres::preprocess(const EntityPose& poseGuess)
 
 bool LaserCloudRegisterCeres::postprocess(EntityPose& poseFinal)
 {
-    poseFinal.orientation = quaterCurr2Last_;
-    poseFinal.position = transCurr2Last_;
+    poseFinal = EntityPose(quaterCurr2Last_, transCurr2Last_);
 
     return LaserCloudRegister::postprocess(poseFinal);
 }
@@ -872,15 +871,23 @@ LaserCloudRegisterNewton::~LaserCloudRegisterNewton()
 {
 }
 
+inline void affine3fToTrans(const Eigen::Affine3f& affinePose, float transformIn[])
+{
+    pcl::getTranslationAndEulerAngles(affinePose, transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
+}
+
+inline Eigen::Affine3f transToAffine3f(float transformIn[])
+{
+    return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
+}
+
 bool LaserCloudRegisterNewton::preprocess(const EntityPose& poseGuess)
 {
     if (!LaserCloudRegister::preprocess(poseGuess)) {
         return false;
     }
 
-    Eigen::Affine3f affinePose = Eigen::Affine3f::Identity();
-    affinePose.linear() = poseGuess.orientation.toRotationMatrix().cast<float>();
-    affinePose.translation() = poseGuess.position.cast<float>();
+    Eigen::Affine3f affinePose = poseGuess.toAffine().cast<float>();
     affine3fToTrans(affinePose, transformTobeMapped_);
     
     return true;
@@ -902,9 +909,7 @@ bool LaserCloudRegisterNewton::postprocess(EntityPose& poseFinal)
     transformTobeMapped_[5] = constraintTransformation(transformTobeMapped_[5], options_.z_tollerance);
 
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
-    poseFinal = EntityPose();
-    poseFinal.orientation = Eigen::Quaterniond(affinePose.rotation().cast<double>());
-    poseFinal.position = affinePose.translation().cast<double>();
+    poseFinal = EntityPose(affinePose.cast<double>());
 
     return LaserCloudRegister::postprocess(poseFinal);
 }

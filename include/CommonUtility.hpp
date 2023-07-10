@@ -32,12 +32,14 @@ class EntityPose
 {
 public:
     EntityPose();
-    void init();
-
+    EntityPose(const Eigen::Quaterniond& orientation, const Eigen::Vector3d& position);
     EntityPose(const Eigen::Isometry3d& transform);
     EntityPose(const Eigen::Affine3d& transform);
     EntityPose(const gtsam::Pose3& transform);
     EntityPose(const gtsam::NavState& transform);
+
+    void init();
+    void calculateAngular();
 
     Eigen::Isometry3d toIsometry() const;
     Eigen::Affine3d toAffine() const;
@@ -50,6 +52,7 @@ public:
 
 public:
     double timestamp; // 时间戳
+    int index; // 数组序号
     Eigen::Quaterniond orientation; // 姿态，四元数
     Eigen::Vector3d position; // 位置，x,y,z
     Eigen::Vector3d angular; // 旋转角度，roll, pitch, yaw
@@ -75,7 +78,8 @@ class MapPoseFrame
 {
 public:
     //PointType pose3D; // 三维位姿，x,y,z
-    PointTypePose pose6D; // 六维位姿，x,y,z,roll,pitch,yaw
+    //PointTypePose pose6D; // 六维位姿，x,y,z,roll,pitch,yaw
+    EntityPose pose;
     pcl::PointCloud<PointType>::Ptr extractedCloud; // 过滤的点云
     pcl::PointCloud<PointType>::Ptr cornerCloud; // 角点点云
     pcl::PointCloud<PointType>::Ptr surfCloud; // 平面点点云
@@ -83,6 +87,31 @@ public:
 typedef std::vector<MapPoseFrame> MapPoseFrameVec;
 typedef boost::shared_ptr<MapPoseFrameVec> MapPoseFrameVecPtr;
 
-#endif // _COMMON_UTILITY_H_
+//PointType pose3DFromPose6D(const PointTypePose& pose6D);
+PointType pose3DFromPose(const EntityPose& pose);
+PointTypePose pose6DFromPose(const EntityPose& pose);
 
+/*
+inline gtsam::Pose3 poseEigen2Gtsam(const Eigen::Isometry3d& eigenPose)
+{
+    return gtsam::Pose3(eigenPose.matrix());
+}
+
+inline Eigen::Isometry3d pclPointToIsometry3d(const PointTypePose& thisPoint)
+{ 
+    Eigen::Affine3f affine3f = pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+    return Eigen::Isometry3d(affine3f.matrix().cast<double>());
+}
+
+inline PointTypePose isometry3dToPclPoint(const Eigen::Isometry3d& isometeryPose)
+{
+    PointTypePose thisPoint;
+    Eigen::Affine3f affinePose(isometeryPose.matrix().cast<float>());
+    pcl::getTranslationAndEulerAngles(affinePose, thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+    return thisPoint;
+}
+*/
+
+
+#endif // _COMMON_UTILITY_H_
 

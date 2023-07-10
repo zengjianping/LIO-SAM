@@ -8,6 +8,18 @@
 #include <GeographicLib/LocalCartesian.hpp>
 
 
+PointTypePose trans2PointTypePose(float transformIn[])
+{
+    PointTypePose thisPose6D;
+    thisPose6D.x = transformIn[3];
+    thisPose6D.y = transformIn[4];
+    thisPose6D.z = transformIn[5];
+    thisPose6D.roll  = transformIn[0];
+    thisPose6D.pitch = transformIn[1];
+    thisPose6D.yaw   = transformIn[2];
+    return thisPose6D;
+}
+
 class MapOptimizationNode : public RosBaseNode
 {
 public:

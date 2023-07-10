@@ -164,6 +164,30 @@ public:
     float initialGuessYaw;
 };
 
+inline gtsam::Pose3 pclPointTogtsamPose3(const PointTypePose& thisPoint)
+{
+    return gtsam::Pose3(gtsam::Rot3::RzRyRx(double(thisPoint.roll), double(thisPoint.pitch), double(thisPoint.yaw)),
+                        gtsam::Point3(double(thisPoint.x), double(thisPoint.y), double(thisPoint.z)));
+}
+
+inline gtsam::Pose3 trans2gtsamPose(float transformIn[])
+{
+    return gtsam::Pose3(gtsam::Rot3::RzRyRx(transformIn[0], transformIn[1], transformIn[2]), 
+                        gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
+}
+
+inline Eigen::Affine3f pclPointToAffine3f(const PointTypePose& thisPoint)
+{ 
+    return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+}
+
+inline PointTypePose affine3fToPclPoint(const Eigen::Affine3f& affinePose)
+{
+    PointTypePose thisPoint;
+    pcl::getTranslationAndEulerAngles(affinePose, thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
+    return thisPoint;
+}
+
 
 #endif // _CORE_UTILITY_H_
 

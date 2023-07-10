@@ -7,7 +7,6 @@ using symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 using symbol_shorthand::G; // GPS pose
 
-
 MapBuilder::MapBuilder(const SystemParameter& params)
 {
     params_ = params;
