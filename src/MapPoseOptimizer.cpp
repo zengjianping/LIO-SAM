@@ -165,10 +165,7 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
     //isamCurrentEstimate.print("Current estimate: ");
 
     gtsam::Pose3 latestEstimate = isamCurrentEstimate.at<gtsam::Pose3>(isamCurrentEstimate.size()-1);
-    EntityPose poseTemp = EntityPose(latestEstimate);
-    poseTemp.index = poseLast.index;
-    poseTemp.timestamp = poseLast.timestamp;
-    poseLast = poseTemp;
+    poseLast.updateFrom(latestEstimate);
 
     // cout << "****************************************************" << endl;
     // cout << "Pose covariance:" << endl;
@@ -177,11 +174,9 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
 
     if (aLoopIsClosed_) {
         int numPoses = isamCurrentEstimate.size();
-
         for (int i = 0; i < numPoses; ++i) {
             const gtsam::Pose3& estimate = isamCurrentEstimate.at<gtsam::Pose3>(i);
-
-            (*mapPoseFrames_)[i].pose = EntityPose(estimate);
+            (*mapPoseFrames_)[i].pose.updateFrom(estimate);
         }
     }
 

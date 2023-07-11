@@ -41,6 +41,8 @@ public:
     void init();
     void calculateAngular();
 
+    void updateFrom(const gtsam::Pose3& transform);
+
     Eigen::Isometry3d toIsometry() const;
     Eigen::Affine3d toAffine() const;
     gtsam::Pose3 toGtsamPose() const;

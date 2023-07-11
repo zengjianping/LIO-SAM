@@ -108,6 +108,14 @@ EntityPose::EntityPose(const gtsam::Pose3& transform)
     calculateAngular();
 }
 
+void EntityPose::updateFrom(const gtsam::Pose3& transform)
+{
+    orientation = transform.rotation().toQuaternion();
+    position = transform.translation();
+    //angular = transform.rotation().rpy();
+    calculateAngular();
+}
+
 EntityPose::EntityPose(const gtsam::NavState& transform)
 {
     init();
