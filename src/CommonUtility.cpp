@@ -164,7 +164,7 @@ PointType pose3DFromPose6D(const PointTypePose& pose6D)
     return pose3D;
 }
 
-PointType pose3DFromEntityPose(const EntityPose& pose)
+PointType pose3DFromPose(const EntityPose& pose)
 {
     PointType pose3D;
     pose3D.x = pose.position.x(); pose3D.y = pose.position.y();
@@ -172,7 +172,7 @@ PointType pose3DFromEntityPose(const EntityPose& pose)
     return pose3D;
 }
 
-PointTypePose pose6DFromEntityPose(const EntityPose& pose)
+PointTypePose pose6DFromPose(const EntityPose& pose)
 {
     PointTypePose pose6D;
     pose6D.x = pose.position.x(); pose6D.y = pose.position.y();

@@ -2,6 +2,10 @@
 #include "CommonNode.hpp"
 
 
+ConfigParameter::ConfigParameter()
+{
+}
+
 RosCommonNode::RosCommonNode()
 {
     nhandle_.param<std::string>("/robot_id", params_.robot_id, "roboat");
