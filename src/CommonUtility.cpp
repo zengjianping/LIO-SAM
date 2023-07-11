@@ -23,8 +23,9 @@ Eigen::Quaterniond eulerAngleToQuaternion(double roll, double pitch, double yaw)
 
 // this implementation assumes normalized quaternion
 // converts to Euler angles in 3-2-1 sequence
-void quaternionToEulerAngle(const Eigen::Quaterniond& q, double& roll, double& pitch, double& yaw)
+Eigen::Vector3d quaternionToEulerAngle(const Eigen::Quaterniond& q)
 {
+    double roll, pitch, yaw;
     double w = q.w(), x = q.x(), y = q.y(), z = q.z();
 
     // roll (x-axis rotation)
@@ -41,6 +42,8 @@ void quaternionToEulerAngle(const Eigen::Quaterniond& q, double& roll, double& p
     double siny_cosp = 2 * (w * z + x * y);
     double cosy_cosp = 1 - 2 * (y * y + z * z);
     yaw = std::atan2(siny_cosp, cosy_cosp);
+
+    return Eigen::Vector3d(roll, pitch, yaw);
 }
 
 void EntityPose::init()
@@ -58,7 +61,9 @@ void EntityPose::init()
 
 void EntityPose::calculateAngular()
 {
-    angular = orientation.toRotationMatrix().eulerAngles(0,1,2);
+    //angular = orientation.toRotationMatrix().eulerAngles(0,1,2);
+    //angular = orientation.toRotationMatrix().eulerAngles(3,2,1);
+    angular = quaternionToEulerAngle(orientation);
 }
 
 EntityPose::EntityPose()
@@ -159,25 +164,34 @@ EntityPose EntityPose::betweenTo(const EntityPose& other) const
 PointType pose3DFromPose6D(const PointTypePose& pose6D)
 {
     PointType pose3D;
-    pose3D.x = pose6D.x; pose3D.y = pose6D.y;
-    pose3D.z = pose6D.z; pose3D.intensity = pose6D.intensity;
+    pose3D.x = pose6D.x;
+    pose3D.y = pose6D.y;
+    pose3D.z = pose6D.z;
+    pose3D.intensity = pose6D.intensity;
     return pose3D;
 }
 
 PointType pose3DFromPose(const EntityPose& pose)
 {
     PointType pose3D;
-    pose3D.x = pose.position.x(); pose3D.y = pose.position.y();
-    pose3D.z = pose.position.z(); pose3D.intensity = pose.index;
+    pose3D.x = pose.position.x();
+    pose3D.y = pose.position.y();
+    pose3D.z = pose.position.z();
+    pose3D.intensity = pose.index;
     return pose3D;
 }
 
 PointTypePose pose6DFromPose(const EntityPose& pose)
 {
     PointTypePose pose6D;
-    pose6D.x = pose.position.x(); pose6D.y = pose.position.y();
+    pose6D.x = pose.position.x();
+    pose6D.y = pose.position.y();
     pose6D.z = pose.position.z();
-    pose6D.time = pose.timestamp; pose6D.intensity = pose.index;
+    pose6D.time = pose.timestamp;
+    pose6D.intensity = pose.index;
+    pose6D.roll = pose.angular.x();
+    pose6D.pitch = pose.angular.y();
+    pose6D.yaw = pose.angular.z();
     return pose6D;
 }
 

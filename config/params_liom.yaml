@@ -102,8 +102,19 @@ lio_sam:
   globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
   globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
 
+  usePoseOptimize: true
+  useImuData: false
+  useGpsData: false
+  sequenceColumn: false
+  mappingIntervalTime: 0.0
 
-
+  registerType: 0
+  maxIterCount: 30
+  minFeatureNum: 50
+  ceresDerivative: 0
+  featureMatchMethod: 0
+  undistortScan: false
+  scanPeriod: 0.1
 
 # Navsat (convert GPS coordinates to Cartesian)
 navsat:

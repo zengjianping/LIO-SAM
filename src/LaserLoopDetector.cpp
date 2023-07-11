@@ -10,11 +10,11 @@ LaserLoopDetector::LaserLoopDetector(const Options& options)
     downSizeFilterICP_.setLeafSize(loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize);
 }
 
-bool LaserLoopDetector::process(double laserCloudTime_, MapPoseFrameVecPtr& mapPoseFrames_, LoopClosureItemVecPtr& loopClosureItems,
+bool LaserLoopDetector::process(double laserCloudTime, MapPoseFrameVecPtr& mapPoseFrames, LoopClosureItemVecPtr& loopClosureItems,
         std::pair<double,double>* loopInfo)
 {
-    laserCloudTime_ = laserCloudTime_;
-    mapPoseFrames_ = mapPoseFrames_;
+    laserCloudTime_ = laserCloudTime;
+    mapPoseFrames_ = mapPoseFrames;
     loopClosureItems_ = loopClosureItems;
 
     loopClosureItems_->clear();

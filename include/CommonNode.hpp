@@ -127,6 +127,21 @@ struct ConfigParameter
     float globalMapVisualizationSearchRadius;
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
+
+    bool usePoseOptimize;
+    bool useImuData;
+    bool useGpsData;
+    bool sequenceColumn;
+    float mappingIntervalTime;
+
+    int registerType;
+    int maxIterCount;
+    int minFeatureNum;
+    int ceresDerivative;
+    int featureMatchMethod;
+    bool undistortScan;
+    float scanPeriod;
+
 };
 
 class RosCommonNode

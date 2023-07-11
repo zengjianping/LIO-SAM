@@ -8,11 +8,12 @@
 void transferParameters(const ConfigParameter& params, MapCloudBuilder::Options& options)
 {
     options.useLoopClosure = params.loopClosureEnableFlag;
-    options.usePoseOptimize = false;
-    options.useImuData = false;
-    options.useGpsData = false;
+    options.usePoseOptimize = params.usePoseOptimize;
+    options.useImuData = params.useImuData;
+    options.useGpsData = params.useGpsData;
+    options.registerType = (LaserCloudRegister::Type)params.registerType;
     options.mappingProcessInterval = params.mappingProcessInterval;
-    options.mappingIntervalTime = 0.0;
+    options.mappingIntervalTime = params.mappingIntervalTime;
     options.mappingCornerLeafSize = params.mappingCornerLeafSize;
     options.mappingSurfLeafSize = params.mappingSurfLeafSize;
     options.surroundingkeyframeAddingDistThreshold = params.surroundingkeyframeAddingDistThreshold; 
@@ -35,12 +36,12 @@ void transferParameters(const ConfigParameter& params, MapCloudBuilder::Options&
 
     options.optionCloudRegister.edgeFeatureMinValidNum = params.edgeFeatureMinValidNum;
     options.optionCloudRegister.surfFeatureMinValidNum = params.surfFeatureMinValidNum;
-    options.optionCloudRegister.maxIterCount = 30;
-    options.optionCloudRegister.minFeatureNum = 50;
-    options.optionCloudRegister.ceresDerivative = 0;
-    options.optionCloudRegister.undistortScan = false;
-    options.optionCloudRegister.scanPeriod = 0.1;
-    options.optionCloudRegister.featureMatchMethod = 0;
+    options.optionCloudRegister.maxIterCount = params.maxIterCount;
+    options.optionCloudRegister.minFeatureNum = params.minFeatureNum;
+    options.optionCloudRegister.ceresDerivative = params.ceresDerivative;
+    options.optionCloudRegister.undistortScan = params.undistortScan;
+    options.optionCloudRegister.scanPeriod = params.scanPeriod;
+    options.optionCloudRegister.featureMatchMethod = params.featureMatchMethod;
     options.optionCloudRegister.z_tollerance = params.z_tollerance;
     options.optionCloudRegister.rotation_tollerance = params.rotation_tollerance;
 
@@ -90,7 +91,7 @@ public:
     ros::ServiceServer srvSaveMap; // 保存地图服务接口
 
     nav_msgs::Path globalPath; // 全局关键帧轨迹
-    ros::Time timeLaserInfoStamp; // 当前雷达帧的时间戳
+    ros::Time laserTimeStamp; // 当前雷达帧的时间戳
     std::deque<sensor_msgs::PointCloud2> cloudQueue;
 
     // Publish odometry for ROS (incremental)
@@ -101,6 +102,11 @@ public:
     int lastSLAMInfoPubSize = -1;
 
     boost::shared_ptr<MapCloudBuilder> mapCloudBuilder_;
+
+    // tf broadcaster
+    tf::TransformBroadcaster tfMap2Odom;
+    tf::TransformBroadcaster tfOdom2Baselink;
+    tf::TransformBroadcaster tfLidar2Baselink;
 
 public:
     MapCloudBuilderNode()
@@ -155,8 +161,10 @@ public:
 
     void loopClosureThread()
     {
-        if (params_.loopClosureEnableFlag == false)
+        if (!params_.loopClosureEnableFlag)
             return;
+        
+        ROS_INFO("Loop closure thread started!");
 
         ros::Rate rate(params_.loopClosureFrequency);
         while (ros::ok())
@@ -165,6 +173,8 @@ public:
             mapCloudBuilder_->processLoopClosure();
             visualizeLoopClosure();
         }
+
+        ROS_INFO("Loop closure thread ended!");
     }
 
     void visualizeLoopClosure()
@@ -185,7 +195,7 @@ public:
         // loop nodes
         visualization_msgs::Marker markerNode;
         markerNode.header.frame_id = params_.odometryFrame;
-        markerNode.header.stamp = timeLaserInfoStamp;
+        markerNode.header.stamp = laserTimeStamp;
         markerNode.action = visualization_msgs::Marker::ADD;
         markerNode.type = visualization_msgs::Marker::SPHERE_LIST;
         markerNode.ns = "loop_nodes";
@@ -197,7 +207,7 @@ public:
         // loop edges
         visualization_msgs::Marker markerEdge;
         markerEdge.header.frame_id = params_.odometryFrame;
-        markerEdge.header.stamp = timeLaserInfoStamp;
+        markerEdge.header.stamp = laserTimeStamp;
         markerEdge.action = visualization_msgs::Marker::ADD;
         markerEdge.type = visualization_msgs::Marker::LINE_LIST;
         markerEdge.ns = "loop_edges";
@@ -241,19 +251,23 @@ public:
         cloudQueue.pop_front();
 
         // extract time stamp
-        timeLaserInfoStamp = currentCloudMsg.header.stamp;
+        laserTimeStamp = currentCloudMsg.header.stamp;
 
         pcl::PointCloud<PointXYZIRT>::Ptr laserCloud = adaptLaserCloud(currentCloudMsg, params_.lidarType);
 
-        if (mapCloudBuilder_->processLaserCloud(laserCloud, timeLaserInfoStamp.toSec())) {
+        if (mapCloudBuilder_->processLaserCloud(laserCloud, laserTimeStamp.toSec())) {
             publishOdometry();
             publishFrames();
         }
     }
 
+    void pubTransform()
+    {
+    }
+
     void publishOdometry()
     {
-        auto laserPoseCurr = mapCloudBuilder_->getLaserPoseCurr();
+        EntityPose laserPoseCurr = mapCloudBuilder_->getLaserPoseCurr();
 
         double px = laserPoseCurr.position.x();
         double py = laserPoseCurr.position.y();
@@ -263,9 +277,22 @@ public:
         double qz = laserPoseCurr.orientation.z();
         double qw = laserPoseCurr.orientation.w();
         
+        // Publish TF
+        tf::Transform mapToOdom = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
+        tfMap2Odom.sendTransform(tf::StampedTransform(mapToOdom, laserTimeStamp, params_.mapFrame, params_.odometryFrame));
+
+        tf::Transform odomToBase = tf::Transform(tf::Quaternion(qx, qy, qz, qw), tf::Vector3(px, py, pz));
+        tf::StampedTransform odomToBaselink = tf::StampedTransform(odomToBase, laserTimeStamp, params_.odometryFrame, params_.baselinkFrame);
+        tfOdom2Baselink.sendTransform(odomToBaselink);
+
+        if (params_.lidarFrame != params_.baselinkFrame) {
+            tf::Transform lidarToBaselink = tf::Transform(tf::createQuaternionFromRPY(0, 0, 0), tf::Vector3(0, 0, 0));
+            tfLidar2Baselink.sendTransform(tf::StampedTransform(lidarToBaselink, laserTimeStamp, params_.lidarFrame, params_.baselinkFrame));
+        }
+
         // Publish odometry for ROS (global)
         nav_msgs::Odometry laserOdometryROS;
-        laserOdometryROS.header.stamp = timeLaserInfoStamp;
+        laserOdometryROS.header.stamp = laserTimeStamp;
         laserOdometryROS.header.frame_id = params_.odometryFrame;
         laserOdometryROS.child_frame_id = "odom_mapping";
         laserOdometryROS.pose.pose.position.x = px;
@@ -276,12 +303,6 @@ public:
         laserOdometryROS.pose.pose.orientation.y = qy;
         laserOdometryROS.pose.pose.orientation.z = qz;
         pubLaserOdometryGlobal.publish(laserOdometryROS);
-        
-        // Publish TF
-        static tf::TransformBroadcaster br;
-        tf::Transform t_odom_to_lidar = tf::Transform(tf::Quaternion(qx, qy, qz, qw), tf::Vector3(px, py, pz));
-        tf::StampedTransform trans_odom_to_lidar = tf::StampedTransform(t_odom_to_lidar, timeLaserInfoStamp, params_.odometryFrame, "lidar_link");
-        br.sendTransform(trans_odom_to_lidar);
 
         // Publish odometry for ROS (incremental)
         nav_msgs::Odometry laserOdomIncremental; // incremental odometry msg
@@ -293,7 +314,7 @@ public:
         else {
             float x, y, z, roll, pitch, yaw;
             pcl::getTranslationAndEulerAngles(increOdomAffine, x, y, z, roll, pitch, yaw);
-            laserOdomIncremental.header.stamp = timeLaserInfoStamp;
+            laserOdomIncremental.header.stamp = laserTimeStamp;
             laserOdomIncremental.header.frame_id = params_.odometryFrame;
             laserOdomIncremental.child_frame_id = "odom_mapping";
             laserOdomIncremental.pose.pose.position.x = x;
@@ -328,10 +349,10 @@ public:
         }
 
         // publish key poses
-        publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, params_.odometryFrame);
+        publishCloud(pubKeyPoses, cloudKeyPoses3D, laserTimeStamp, params_.odometryFrame);
 
         // Publish surrounding key frames
-        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, params_.odometryFrame);
+        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, laserTimeStamp, params_.odometryFrame);
 
         // publish registered key frame
         if (pubRecentKeyFrame.getNumSubscribers() != 0) {
@@ -339,7 +360,7 @@ public:
             PointTypePose thisPose6D = pose6DFromPose(laserPoseCurr);
             *cloudOut += *transformPointCloud(laserCloudCornerLastDS, &thisPose6D);
             *cloudOut += *transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
-            publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, params_.odometryFrame);
+            publishCloud(pubRecentKeyFrame, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
         // publish registered high-res raw cloud
@@ -347,7 +368,7 @@ public:
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             PointTypePose thisPose6D = pose6DFromPose(laserPoseCurr);
             *cloudOut = *transformPointCloud(extractedCloud, &thisPose6D);
-            publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, params_.odometryFrame);
+            publishCloud(pubCloudRegisteredRaw, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
         // publish path
@@ -357,7 +378,7 @@ public:
             for (int i = 0; i < (int)cloudKeyPoses6D->points.size(); ++i) {
                 updatePath(cloudKeyPoses6D->points[i]);
             }
-            globalPath.header.stamp = timeLaserInfoStamp;
+            globalPath.header.stamp = laserTimeStamp;
             globalPath.header.frame_id = params_.odometryFrame;
             pubPath.publish(globalPath);
         }
@@ -367,16 +388,16 @@ public:
         {
             if (lastSLAMInfoPubSize != cloudKeyPoses6D->size()) {
                 lio_sam::cloud_info slamInfo;
-                slamInfo.header.stamp = timeLaserInfoStamp;
+                slamInfo.header.stamp = laserTimeStamp;
                 pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
                 *cloudOut += *laserCloudCornerLastDS;
                 *cloudOut += *laserCloudSurfLastDS;
-                slamInfo.key_frame_cloud = publishCloud(ros::Publisher(), cloudOut, timeLaserInfoStamp, params_.lidarFrame);
-                slamInfo.key_frame_poses = publishCloud(ros::Publisher(), cloudKeyPoses6D, timeLaserInfoStamp, params_.odometryFrame);
+                slamInfo.key_frame_cloud = publishCloud(ros::Publisher(), cloudOut, laserTimeStamp, params_.lidarFrame);
+                slamInfo.key_frame_poses = publishCloud(ros::Publisher(), cloudKeyPoses6D, laserTimeStamp, params_.odometryFrame);
                 pcl::PointCloud<PointType>::Ptr localMapOut(new pcl::PointCloud<PointType>());
                 *localMapOut += *laserCloudCornerFromMapDS;
                 *localMapOut += *laserCloudSurfFromMapDS;
-                slamInfo.key_frame_map = publishCloud(ros::Publisher(), localMapOut, timeLaserInfoStamp, params_.odometryFrame);
+                slamInfo.key_frame_map = publishCloud(ros::Publisher(), localMapOut, laserTimeStamp, params_.odometryFrame);
                 pubSLAMInfo.publish(slamInfo);
                 lastSLAMInfoPubSize = cloudKeyPoses6D->size();
             }
@@ -402,11 +423,15 @@ public:
 
     void visualizeGlobalMapThread()
     {
+        ROS_INFO("Visualize thread started!");
+
         ros::Rate rate(0.2);
         while (ros::ok()){
             rate.sleep();
             publishGlobalMap();
         }
+
+        ROS_INFO("Visualize thread ended!");
 
         if (params_.savePCD == false)
             return;
@@ -460,8 +485,7 @@ public:
         downSizeFilterGlobalMapKeyPoses.setLeafSize(params_.globalMapVisualizationPoseDensity, params_.globalMapVisualizationPoseDensity, params_.globalMapVisualizationPoseDensity); // for global map visualization
         downSizeFilterGlobalMapKeyPoses.setInputCloud(globalMapKeyPoses);
         downSizeFilterGlobalMapKeyPoses.filter(*globalMapKeyPosesDS);
-        for(auto& pt : globalMapKeyPosesDS->points)
-        {
+        for(auto& pt : globalMapKeyPosesDS->points) {
             kdtreeGlobalMap->nearestKSearch(pt, 1, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
             pt.intensity = cloudKeyPoses3D->points[pointSearchIndGlobalMap[0]].intensity;
         }
@@ -479,7 +503,7 @@ public:
         downSizeFilterGlobalMapKeyFrames.setLeafSize(params_.globalMapVisualizationLeafSize, params_.globalMapVisualizationLeafSize, params_.globalMapVisualizationLeafSize); // for global map visualization
         downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
         downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
-        publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, params_.odometryFrame);
+        publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, laserTimeStamp, params_.odometryFrame);
     }
 };
 

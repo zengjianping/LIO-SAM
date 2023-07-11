@@ -8,8 +8,7 @@ MapCloudBuilder::MapCloudBuilder(const Options& options)
 
     imuOdometryPredictor_.reset(new ImuOdometryPredictor(options_.optionImuOdomPredictor));
     laserCloudExtractor_.reset(new LaserCloudExtractor(options_.optionCloudExtractor));
-    LaserCloudRegister::Type registerType = LaserCloudRegister::NEWTON;
-    laserCloudRegister_.reset(LaserCloudRegister::createInstance(registerType, options_.optionCloudRegister));
+    laserCloudRegister_.reset(LaserCloudRegister::createInstance(options_.registerType, options_.optionCloudRegister));
     laserLoopDetector_.reset(new LaserLoopDetector(options_.optionLoopDetector));
     mapPoseOptimizer_.reset(new MapPoseOptimizer(options_.optionPoseOptimizer));
 
@@ -60,7 +59,7 @@ void MapCloudBuilder::processLoopClosure()
     {
         std::lock_guard<std::mutex> lock(mtxCloud_);
         laserTimeCurr = laserTimeCurr_;
-        *mapPoseKeyFrames = *mapPoseKeyFrames;
+        *mapPoseKeyFrames = *mapPoseKeyFrames_;
     }
     laserLoopDetector_->process(laserTimeCurr, mapPoseKeyFrames, loopClosureItems, pLoopInfo);
     {
@@ -157,6 +156,7 @@ bool MapCloudBuilder::processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr 
 
     laserTimeCurr_ = laserTime;
     laserCloudIn_ = laserCloud;
+    cout << "Laser interval time: " << laserTimeCurr_-laserTimePrev_ << endl;
 
     extractPointCloud();
 

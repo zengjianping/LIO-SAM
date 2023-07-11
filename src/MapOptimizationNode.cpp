@@ -295,6 +295,11 @@ public:
         auto& transformTobeMapped = mapBuilder_->transformTobeMapped;
         auto& incrementalOdometryAffineFront = mapBuilder_->incrementalOdometryAffineFront;
         auto& incrementalOdometryAffineBack = mapBuilder_->incrementalOdometryAffineBack;
+
+        char buffer[1000];
+        sprintf(buffer, "roll: %f, pitch: %f, yaw: %f, x: %f, y: %f, z: %f", transformTobeMapped[0], transformTobeMapped[1],
+            transformTobeMapped[2], transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+        cout << "transform: " << buffer << endl;
         
         // Publish odometry for ROS (global)
         nav_msgs::Odometry laserOdometryROS;

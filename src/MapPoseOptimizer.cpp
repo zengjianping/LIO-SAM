@@ -133,6 +133,8 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
     laserCloudTime_ = laserCloudTime;
     mapPoseFrames_ = mapPoseFrames;
     aLoopIsClosed_ = false;
+    EntityPose& poseLast = mapPoseFrames_->back().pose;
+    //cout << "matrix1: " << poseLast.orientation.toRotationMatrix() << endl;
 
     // odom factor
     addOdomFactor();
@@ -143,8 +145,8 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
     // loop factor
     addLoopFactor(loopClosureItems);
 
-    // cout << "****************************************************" << endl;
-    // gtSAMgraph_.print("GTSAM Graph:\n");
+    //cout << "****************************************************" << endl;
+    //gtSAMgraph_.print("GTSAM Graph:\n");
 
     // update iSAM
     isam_->update(gtSAMgraph_, initialEstimate_);
@@ -158,25 +160,15 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
         isam_->update();
     }
 
-    gtSAMgraph_.resize(0);
-    initialEstimate_.clear();
+    isamCurrentEstimate = isam_->calculateEstimate();
+    //cout << "****************************************************" << endl;
+    //isamCurrentEstimate.print("Current estimate: ");
 
-    gtsam::Values isamCurrentEstimate = isam_->calculateEstimate();
     gtsam::Pose3 latestEstimate = isamCurrentEstimate.at<gtsam::Pose3>(isamCurrentEstimate.size()-1);
-    // cout << "****************************************************" << endl;
-    // isamCurrentEstimate.print("Current estimate: ");
-
-    /*PointTypePose thisPose6D;
-    thisPose6D.x = latestEstimate.translation().x();
-    thisPose6D.y = latestEstimate.translation().y();
-    thisPose6D.z = latestEstimate.translation().z();
-    thisPose6D.intensity = mapPoseFrames_->size() - 1; // this can be used as index
-    thisPose6D.roll = latestEstimate.rotation().roll();
-    thisPose6D.pitch = latestEstimate.rotation().pitch();
-    thisPose6D.yaw = latestEstimate.rotation().yaw();
-    thisPose6D.time = laserCloudTime_;
-    mapPoseFrames_->back().pose6D = thisPose6D;*/
-    mapPoseFrames_->back().pose = EntityPose(latestEstimate);
+    EntityPose poseTemp = EntityPose(latestEstimate);
+    poseTemp.index = poseLast.index;
+    poseTemp.timestamp = poseLast.timestamp;
+    poseLast = poseTemp;
 
     // cout << "****************************************************" << endl;
     // cout << "Pose covariance:" << endl;
@@ -189,17 +181,14 @@ bool MapPoseOptimizer::process(double laserCloudTime, MapPoseFrameVecPtr& mapPos
         for (int i = 0; i < numPoses; ++i) {
             const gtsam::Pose3& estimate = isamCurrentEstimate.at<gtsam::Pose3>(i);
 
-            /*PointTypePose& pose6D = (*mapPoseFrames_)[i].pose6D;
-            pose6D.x = estimate.translation().x();
-            pose6D.y = estimate.translation().y();
-            pose6D.z = estimate.translation().z();
-            pose6D.roll = estimate.rotation().roll();
-            pose6D.pitch = estimate.rotation().pitch();
-            pose6D.yaw = estimate.rotation().yaw();*/
             (*mapPoseFrames_)[i].pose = EntityPose(estimate);
         }
     }
 
+    gtSAMgraph_.resize(0);
+    initialEstimate_.clear();
+
+    //cout << "matrix2: " << poseLast.orientation.toRotationMatrix() << endl;
     return true;
 }
 

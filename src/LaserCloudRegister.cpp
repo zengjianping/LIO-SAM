@@ -23,6 +23,7 @@ void LaserCloudRegister::setEdgeFeatureCloud(const pcl::PointCloud<pcl::PointXYZ
 {
     edgeCloudCurr_ = cloudCurr;
     edgeCloudLast_ = cloudLast;
+    kdtreeEdgeCloud_.reset(new pcl::KdTreeFLANN<PointType>());
     kdtreeEdgeCloud_->setInputCloud(edgeCloudLast_);
 }
 
@@ -30,6 +31,7 @@ void LaserCloudRegister::setSurfFeatureCloud(const pcl::PointCloud<pcl::PointXYZ
 {
     surfCloudCurr_ = cloudCurr;
     surfCloudLast_ = cloudLast;
+    kdtreeSurfCloud_.reset(new pcl::KdTreeFLANN<PointType>());
     kdtreeSurfCloud_->setInputCloud(surfCloudLast_);
 }
 
@@ -43,11 +45,18 @@ bool LaserCloudRegister::process(const EntityPose& poseGuess, EntityPose& poseFi
         return false;
     }
 
+    //cout << "Register point cloud..." << endl;
+    //cout << "Input edge features: " << numEdgeFeatures << endl;
+    //cout << "Input surf features: " << numSurfFeatures << endl;
+
     if (!preprocess(poseGuess)) {
         return false;
     }
 
+    bool sucDone = true;
     for (int iterCount=0; iterCount < options_.maxIterCount; iterCount++) {
+        //cout << "Iteration: " << iterCount << endl;
+
         if (!prepareProcessing()) {
             return false;
         }
@@ -59,11 +68,22 @@ bool LaserCloudRegister::process(const EntityPose& poseGuess, EntityPose& poseFi
             if (poseConverged_)
                 break;
         } else {
-            return false;
+            sucDone = false;
+            break;
         }
     }
 
-    return postprocess(poseFinal);
+    if (sucDone) {
+        sucDone = postprocess(poseFinal);
+    }
+    if (sucDone) {
+        //cout << "Converged: " <<  poseConverged_ << endl;
+        //cout << "Position: " << poseFinal.position << endl;
+        //cout << "Angular: " << poseFinal.angular << endl;
+    }
+
+    //cout << "Ending registering!" << endl;
+    return sucDone;
 }
 
 bool LaserCloudRegister::preprocess(const EntityPose& poseGuess)
@@ -106,6 +126,7 @@ void LaserCloudRegister::processEdgeFeatureCloud()
             }
         }
     }
+    //cout << "Valid edge features: " << numValids << endl;
 }
 
 constexpr double DISTANCE_SQ_THRESHOLD = 25;
@@ -247,6 +268,7 @@ void LaserCloudRegister::processSurfFeatureCloud()
             }
         }
     }
+    //cout << "Valid surf features: " << numValids << endl;
 }
 
 bool LaserCloudRegister::matchOneSurfFeatureS(const pcl::PointXYZI& pointOri, pcl::PointXYZI& pointSel, Eigen::Vector3d& currPoint,
@@ -881,6 +903,13 @@ inline Eigen::Affine3f transToAffine3f(float transformIn[])
     return pcl::getTransformation(transformIn[3], transformIn[4], transformIn[5], transformIn[0], transformIn[1], transformIn[2]);
 }
 
+void printTransform(float trans[], char* prefix)
+{
+    char buffer[1000];
+    sprintf(buffer, "roll: %f, pitch: %f, yaw: %f, x: %f, y: %f, z: %f", trans[0], trans[1], trans[2], trans[3], trans[4], trans[5]);
+    cout << prefix << " transform: " << buffer << endl;
+}
+
 bool LaserCloudRegisterNewton::preprocess(const EntityPose& poseGuess)
 {
     if (!LaserCloudRegister::preprocess(poseGuess)) {
@@ -889,6 +918,7 @@ bool LaserCloudRegisterNewton::preprocess(const EntityPose& poseGuess)
 
     Eigen::Affine3f affinePose = poseGuess.toAffine().cast<float>();
     affine3fToTrans(affinePose, transformTobeMapped_);
+    //printTransform(transformTobeMapped_, "Guess");
     
     return true;
 }
@@ -907,9 +937,11 @@ bool LaserCloudRegisterNewton::postprocess(EntityPose& poseFinal)
     transformTobeMapped_[0] = constraintTransformation(transformTobeMapped_[0], options_.rotation_tollerance);
     transformTobeMapped_[1] = constraintTransformation(transformTobeMapped_[1], options_.rotation_tollerance);
     transformTobeMapped_[5] = constraintTransformation(transformTobeMapped_[5], options_.z_tollerance);
+    //printTransform(transformTobeMapped_, "Final");
 
     Eigen::Affine3f affinePose = transToAffine3f(transformTobeMapped_);
     poseFinal = EntityPose(affinePose.cast<double>());
+    //cout << "Angular: " << poseFinal.angular << endl;
 
     return LaserCloudRegister::postprocess(poseFinal);
 }
@@ -925,8 +957,8 @@ void LaserCloudRegisterNewton::transformPointToLast(const pcl::PointXYZI& inp, p
 bool LaserCloudRegisterNewton::prepareProcessing()
 {
     transPointAssociateToMap_ = transToAffine3f(transformTobeMapped_);
-    laserCloudOri_->clear();
-    coeffSel_->clear();
+    laserCloudOri_.reset(new pcl::PointCloud<pcl::PointXYZI>());
+    coeffSel_.reset(new pcl::PointCloud<pcl::PointXYZI>());
     return true;
 }
 

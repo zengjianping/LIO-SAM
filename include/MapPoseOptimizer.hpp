@@ -39,6 +39,7 @@ protected:
     gtsam::ISAM2 *isam_ = nullptr; // 非线性优化器
     gtsam::NonlinearFactorGraph gtSAMgraph_; // 因子图
     gtsam::Values initialEstimate_; // 因子图变量初始值
+    gtsam::Values isamCurrentEstimate; // 因子图变量估计值
     Eigen::MatrixXd poseCovariance_; // 当前优化结果的位姿方差，该方差在GPS因子中用到，如果该方差较小，则说明优化结果较好，即使打开GPS开关也不会将GPS因子加入因子图。
 
     bool aLoopIsClosed_ = false; // 回环检测数据

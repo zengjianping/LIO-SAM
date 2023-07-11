@@ -35,6 +35,17 @@ bool LaserCloudExtractor::process(const pcl::PointCloud<PointXYZIRT>::Ptr& laser
 
     extractPointCloud();
 
+    calculateSmoothness();
+
+    markOccludedPoints();
+
+    extractFeatures();
+
+    //cout << "Original point cloud size: " << laserCloud_->size() << endl;
+    //cout << "Filtered point cloud size: " << extractedCloud_->size() << endl;
+    //cout << "Edge point cloud size: " << cornerCloud_->size() << endl;
+    //cout << "Surf point cloud size: " << surfaceCloud_->size() << endl;
+
     return true;
 }
 

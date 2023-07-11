@@ -92,7 +92,7 @@ RosCommonNode::RosCommonNode()
     nhandle_.param<float>("lio_sam/surroundingkeyframeAddingAngleThreshold", params_.surroundingkeyframeAddingAngleThreshold, 0.2);
     nhandle_.param<float>("lio_sam/surroundingKeyframeDensity", params_.surroundingKeyframeDensity, 1.0);
     nhandle_.param<float>("lio_sam/surroundingKeyframeSearchRadius", params_.surroundingKeyframeSearchRadius, 50.0);
-    nhandle_.param<float>("liorf/surroundingKeyframeMapLeafSize", params_.surroundingKeyframeMapLeafSize, 0.2);
+    nhandle_.param<float>("lio_sam/surroundingKeyframeMapLeafSize", params_.surroundingKeyframeMapLeafSize, 0.2);
 
     nhandle_.param<bool>("lio_sam/loopClosureEnableFlag", params_.loopClosureEnableFlag, false);
     nhandle_.param<float>("lio_sam/loopClosureFrequency", params_.loopClosureFrequency, 1.0);
@@ -107,6 +107,20 @@ RosCommonNode::RosCommonNode()
     nhandle_.param<float>("lio_sam/globalMapVisualizationSearchRadius", params_.globalMapVisualizationSearchRadius, 1e3);
     nhandle_.param<float>("lio_sam/globalMapVisualizationPoseDensity", params_.globalMapVisualizationPoseDensity, 10.0);
     nhandle_.param<float>("lio_sam/globalMapVisualizationLeafSize", params_.globalMapVisualizationLeafSize, 1.0);
+
+    nhandle_.param<bool>("lio_sam/usePoseOptimize", params_.usePoseOptimize, false);
+    nhandle_.param<bool>("lio_sam/useImuData", params_.useImuData, false);
+    nhandle_.param<bool>("lio_sam/useGpsData", params_.useGpsData, false);
+    nhandle_.param<bool>("lio_sam/sequenceColumn", params_.sequenceColumn, false);
+    nhandle_.param<float>("lio_sam/mappingIntervalTime", params_.mappingIntervalTime, 0.0);
+
+    nhandle_.param<int>("lio_sam/registerType", params_.registerType, 0);
+    nhandle_.param<int>("lio_sam/maxIterCount", params_.maxIterCount, 30);
+    nhandle_.param<int>("lio_sam/minFeatureNum", params_.minFeatureNum, 50);
+    nhandle_.param<int>("lio_sam/ceresDerivative", params_.ceresDerivative, 0);
+    nhandle_.param<int>("lio_sam/featureMatchMethod", params_.featureMatchMethod, 0);
+    nhandle_.param<bool>("lio_sam/undistortScan", params_.undistortScan, false);
+    nhandle_.param<float>("lio_sam/scanPeriod", params_.scanPeriod, 0.1);
 
     usleep(100);
 }

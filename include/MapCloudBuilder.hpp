@@ -25,6 +25,7 @@ public:
         bool usePoseOptimize = true;
         bool useImuData = true;
         bool useGpsData = false;
+        LaserCloudRegister::Type registerType = LaserCloudRegister::NEWTON;
 
         // processing interval
         double mappingProcessInterval = 0.0;
