@@ -23,7 +23,7 @@ public:
         int minFeatureNum = 50;
         int ceresDerivative = 0; // 0: automatic, 1: analytic
         bool undistortScan = false;
-        double scanPeriod = 0.1;
+        float scanPeriod = 0.1;
         bool featureMatchMethod = 0; // 0: fit, 1: search
         float z_tollerance = 1000; 
         float rotation_tollerance = 1000;

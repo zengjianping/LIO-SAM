@@ -56,6 +56,16 @@ public:
     bool processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr laserCloud, double laserTime);
     bool saveCloudMap(const string& dataDir, float mapResolution);
 
+public:
+    EntityPose getLaserPoseCurr() { return laserPoseCurr_; }
+    MapPoseFrameVecPtr getMapPoseKeyFrames() { return mapPoseKeyFrames_; }
+    pcl::PointCloud<PointType>::Ptr getExtractedCloud() { return extractedCloud_; }
+    pcl::PointCloud<PointType>::Ptr getLaserCloudCornerLastDS() { return laserCloudCornerLastDS_; }
+    pcl::PointCloud<PointType>::Ptr getLaserCloudSurfLastDS() { return laserCloudSurfLastDS_; }
+    pcl::PointCloud<PointType>::Ptr getLaserCloudCornerFromMapDS() { return laserCloudCornerFromMapDS_; }
+    pcl::PointCloud<PointType>::Ptr getLaserCloudSurfFromMapDS() { return laserCloudSurfFromMapDS_; }
+    std::map<int, int> getLoopIndexContainer() { return laserLoopDetector_->getLoopIndexContainer(); }
+
 protected:
     bool consumeLoopInfo(std::pair<double,double>& info);
     void consumeGpsSamples(double laserTime, std::vector<EntityPose>& gpsSamples);

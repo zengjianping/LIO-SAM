@@ -39,6 +39,9 @@ protected:
     bool detectLoopClosureExternal(std::pair<double,double>* loopInfo, int *latestID, int *closestID);
     void loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& nearKeyframes, const int& key, const int& searchNum, const int loop_index=-1);
 
+public:
+    const std::map<int, int>& getLoopIndexContainer() { return loopIndexContainer_; }
+
 protected:
     Options options_; // 算法参数
 

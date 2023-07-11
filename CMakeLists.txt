@@ -91,6 +91,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/ScanContext/Scancontext.cpp
   src/CommonDefine.cpp
   src/CommonUtility.cpp
+  src/CommonNode.cpp
   src/CoreUtility.cpp
   src/NodeUtility.cpp
   src/ImuOdometry.cpp
@@ -103,6 +104,7 @@ add_library(${PROJECT_NAME}_utilities STATIC
   src/LaserLoopDetector.cpp
   src/MapPoseOptimizer.cpp
   src/MapCloudBuilder.cpp
+  src/MapCloudBuilderNode.cpp
 )
 target_link_libraries(${PROJECT_NAME}_utilities ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
