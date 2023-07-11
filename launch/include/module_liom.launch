@@ -1,0 +1,6 @@
+<launch>
+
+    <arg name="project" default="lio_sam"/>
+    <node pkg="$(arg project)" type="$(arg project)_mapCloudBuilderNode"  name="$(arg project)_mapCloudBuilder" output="screen" respawn="true"/>
+    
+</launch>
