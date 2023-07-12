@@ -188,6 +188,8 @@ inline PointTypePose affine3fToPclPoint(const Eigen::Affine3f& affinePose)
     return thisPoint;
 }
 
+pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn);
+
 
 #endif // _CORE_UTILITY_H_
 

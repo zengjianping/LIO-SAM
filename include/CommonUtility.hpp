@@ -89,6 +89,7 @@ public:
 typedef std::vector<MapPoseFrame> MapPoseFrameVec;
 typedef boost::shared_ptr<MapPoseFrameVec> MapPoseFrameVecPtr;
 
+pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, const EntityPose& transform);
 //PointType pose3DFromPose6D(const PointTypePose& pose6D);
 PointType pose3DFromPose(const EntityPose& pose);
 PointTypePose pose6DFromPose(const EntityPose& pose);

@@ -185,10 +185,9 @@ public:
         if (loopIndexContainer.empty())
             return;
         
-        pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
-        cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
+        std::vector<EntityPose> keyPoses;
         for (const MapPoseFrame& frame : *mapPoseKeyFrames) {
-            cloudKeyPoses6D->points.push_back(pose6DFromPose(frame.pose));
+            keyPoses.push_back(frame.pose);
         }
 
         visualization_msgs::MarkerArray markerArray;
@@ -222,14 +221,12 @@ public:
             int key_cur = it->first;
             int key_pre = it->second;
             geometry_msgs::Point p;
-            p.x = cloudKeyPoses6D->points[key_cur].x;
-            p.y = cloudKeyPoses6D->points[key_cur].y;
-            p.z = cloudKeyPoses6D->points[key_cur].z;
+            const Eigen::Vector3d& pos1 = keyPoses[key_cur].position;
+            p.x = pos1.x(); p.y = pos1.y(); p.z = pos1.z();
             markerNode.points.push_back(p);
             markerEdge.points.push_back(p);
-            p.x = cloudKeyPoses6D->points[key_pre].x;
-            p.y = cloudKeyPoses6D->points[key_pre].y;
-            p.z = cloudKeyPoses6D->points[key_pre].z;
+            const Eigen::Vector3d& pos2 = keyPoses[key_pre].position;
+            p.x = pos2.x(); p.y = pos2.y(); p.z = pos2.z();
             markerNode.points.push_back(p);
             markerEdge.points.push_back(p);
         }
@@ -357,17 +354,15 @@ public:
         // publish registered key frame
         if (pubRecentKeyFrame.getNumSubscribers() != 0) {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-            PointTypePose thisPose6D = pose6DFromPose(laserPoseCurr);
-            *cloudOut += *transformPointCloud(laserCloudCornerLastDS, &thisPose6D);
-            *cloudOut += *transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
+            *cloudOut += *transformPointCloud(laserCloudCornerLastDS, laserPoseCurr);
+            *cloudOut += *transformPointCloud(laserCloudSurfLastDS, laserPoseCurr);
             publishCloud(pubRecentKeyFrame, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
         // publish registered high-res raw cloud
         if (pubCloudRegisteredRaw.getNumSubscribers() != 0) {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-            PointTypePose thisPose6D = pose6DFromPose(laserPoseCurr);
-            *cloudOut = *transformPointCloud(extractedCloud, &thisPose6D);
+            *cloudOut = *transformPointCloud(extractedCloud, laserPoseCurr);
             publishCloud(pubCloudRegisteredRaw, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
@@ -375,8 +370,8 @@ public:
         if (pubPath.getNumSubscribers() != 0) {
             // clear path
             globalPath.poses.clear();
-            for (int i = 0; i < (int)cloudKeyPoses6D->points.size(); ++i) {
-                updatePath(cloudKeyPoses6D->points[i]);
+            for (int i = 0; i < (int)mapPoseKeyFrames->size(); ++i) {
+                updatePath((*mapPoseKeyFrames)[i].pose);
             }
             globalPath.header.stamp = laserTimeStamp;
             globalPath.header.frame_id = params_.odometryFrame;
@@ -404,15 +399,16 @@ public:
         }
     }
 
-    void updatePath(const PointTypePose& pose_in)
+    void updatePath(const EntityPose& pose_in)
     {
         geometry_msgs::PoseStamped pose_stamped;
-        pose_stamped.header.stamp = ros::Time().fromSec(pose_in.time);
+        pose_stamped.header.stamp = ros::Time().fromSec(pose_in.timestamp);
         pose_stamped.header.frame_id = params_.odometryFrame;
-        pose_stamped.pose.position.x = pose_in.x;
-        pose_stamped.pose.position.y = pose_in.y;
-        pose_stamped.pose.position.z = pose_in.z;
-        tf::Quaternion q = tf::createQuaternionFromRPY(pose_in.roll, pose_in.pitch, pose_in.yaw);
+        pose_stamped.pose.position.x = pose_in.position.x();
+        pose_stamped.pose.position.y = pose_in.position.y();
+        pose_stamped.pose.position.z = pose_in.position.z();
+        //tf::Quaternion q = tf::createQuaternionFromRPY(pose_in.roll, pose_in.pitch, pose_in.yaw);
+        const Eigen::Quaterniond& q = pose_in.orientation;
         pose_stamped.pose.orientation.x = q.x();
         pose_stamped.pose.orientation.y = q.y();
         pose_stamped.pose.orientation.z = q.z();
@@ -448,20 +444,17 @@ public:
     {
         auto mapPoseKeyFrames = mapCloudBuilder_->getMapPoseKeyFrames();
 
-        pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
-        cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointTypePose>::Ptr cloudKeyPoses6D;
-        cloudKeyPoses6D.reset(new pcl::PointCloud<PointTypePose>());
-        for (const MapPoseFrame& frame : *mapPoseKeyFrames) {
-            cloudKeyPoses3D->points.push_back(pose3DFromPose(frame.pose));
-            cloudKeyPoses6D->points.push_back(pose6DFromPose(frame.pose));
-        }
-
         if (pubLaserCloudSurround.getNumSubscribers() == 0)
             return;
 
-        if (cloudKeyPoses3D->points.empty() == true)
+        if (mapPoseKeyFrames->empty())
             return;
+
+        pcl::PointCloud<PointType>::Ptr cloudKeyPoses3D;
+        cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
+        for (const MapPoseFrame& frame : *mapPoseKeyFrames) {
+            cloudKeyPoses3D->points.push_back(pose3DFromPose(frame.pose));
+        }
 
         pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
         pcl::PointCloud<PointType>::Ptr globalMapKeyPoses(new pcl::PointCloud<PointType>());
@@ -495,8 +488,9 @@ public:
             if (pointDistance(globalMapKeyPosesDS->points[i], cloudKeyPoses3D->back()) > params_.globalMapVisualizationSearchRadius)
                 continue;
             int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
-            *globalMapKeyFrames += *transformPointCloud((*mapPoseKeyFrames)[thisKeyInd].cornerCloud, &cloudKeyPoses6D->points[thisKeyInd]);
-            *globalMapKeyFrames += *transformPointCloud((*mapPoseKeyFrames)[thisKeyInd].surfCloud, &cloudKeyPoses6D->points[thisKeyInd]);
+            MapPoseFrame& frame = (*mapPoseKeyFrames)[thisKeyInd];
+            *globalMapKeyFrames += *transformPointCloud(frame.cornerCloud, frame.pose);
+            *globalMapKeyFrames += *transformPointCloud(frame.surfCloud, frame.pose);
         }
         // downsample visualized points
         pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization

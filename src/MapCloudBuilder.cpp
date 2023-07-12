@@ -274,9 +274,8 @@ void MapCloudBuilder::_extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtra
         else {
             // transformed cloud not available
             MapPoseFrame& frame = (*mapPoseKeyFrames_)[thisKeyInd];
-            PointTypePose pose6D = pose6DFromPose(frame.pose);
-            pcl::PointCloud<PointType> laserCloudCornerTemp = *transformPointCloud(frame.cornerCloud, &pose6D);
-            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(frame.surfCloud, &pose6D);
+            pcl::PointCloud<PointType> laserCloudCornerTemp = *transformPointCloud(frame.cornerCloud, frame.pose);
+            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(frame.surfCloud, frame.pose);
             *laserCloudCornerFromMap_ += laserCloudCornerTemp;
             *laserCloudSurfFromMap_  += laserCloudSurfTemp;
             laserCloudMapContainer_[thisKeyInd] = make_pair(laserCloudCornerTemp, laserCloudSurfTemp);
@@ -420,10 +419,11 @@ bool MapCloudBuilder::saveCloudMap(const string& dataDir, float mapResolution)
     pcl::PointCloud<PointType>::Ptr globalSurfCloud(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalSurfCloudDS(new pcl::PointCloud<PointType>());
     pcl::PointCloud<PointType>::Ptr globalMapCloud(new pcl::PointCloud<PointType>());
-    for (int i = 0; i < (int)cloudKeyPoses6D->size(); i++) {
-        *globalCornerCloud += *transformPointCloud((*mapPoseKeyFrames_)[i].cornerCloud, &cloudKeyPoses6D->points[i]);
-        *globalSurfCloud   += *transformPointCloud((*mapPoseKeyFrames_)[i].surfCloud, &cloudKeyPoses6D->points[i]);
-        cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloudKeyPoses6D->size() << " ...";
+    for (int i = 0; i < (int)mapPoseKeyFrames_->size(); i++) {
+        MapPoseFrame& frame = (*mapPoseKeyFrames_)[i];
+        *globalCornerCloud += *transformPointCloud(frame.cornerCloud, frame.pose);
+        *globalSurfCloud += *transformPointCloud(frame.surfCloud, frame.pose);
+        cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << mapPoseKeyFrames_->size() << " ...";
     }
 
     if (mapResolution != 0) {

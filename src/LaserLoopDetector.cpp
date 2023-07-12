@@ -313,9 +313,9 @@ void LaserLoopDetector::loopFindNearKeyframes(pcl::PointCloud<PointType>::Ptr& n
         if (keyNear < 0 || keyNear >= cloudSize )
             continue;
         int select_loop_index = (loop_index != -1) ? loop_index : keyNear;
-        PointTypePose pose6D = pose6DFromPose((*mapPoseFrames_)[select_loop_index].pose);
-        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].cornerCloud, &pose6D);
-        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].surfCloud, &pose6D);
+        const EntityPose& pose = (*mapPoseFrames_)[select_loop_index].pose;
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].cornerCloud, pose);
+        *nearKeyframes += *transformPointCloud((*mapPoseFrames_)[keyNear].surfCloud, pose);
     }
 
     if (nearKeyframes->empty())
