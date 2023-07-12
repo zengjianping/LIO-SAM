@@ -121,6 +121,7 @@ RosCommonNode::RosCommonNode()
     nhandle_.param<int>("lio_sam/featureMatchMethod", params_.featureMatchMethod, 0);
     nhandle_.param<bool>("lio_sam/undistortScan", params_.undistortScan, false);
     nhandle_.param<float>("lio_sam/scanPeriod", params_.scanPeriod, 0.1);
+    nhandle_.param<bool>("lio_sam/deskewLaserScan", params_.deskewLaserScan, false);
 
     usleep(100);
 }

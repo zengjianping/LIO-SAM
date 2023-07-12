@@ -10,6 +10,7 @@ void transferParameters(const ConfigParameter& params, MapCloudBuilder::Options&
     options.useLoopClosure = params.loopClosureEnableFlag;
     options.usePoseOptimize = params.usePoseOptimize;
     options.useImuData = params.useImuData;
+    options.deskewLaserScan = params.deskewLaserScan;
     options.useGpsData = params.useGpsData;
     options.registerType = (LaserCloudRegister::Type)params.registerType;
     options.mappingProcessInterval = params.mappingProcessInterval;
@@ -70,22 +71,25 @@ public:
     // ROS topic publishers
     ros::Publisher pubLaserCloudSurround; // 发布当前雷达帧周边环境点云
     ros::Publisher pubLaserOdometryGlobal; // 发布雷达里程计（全局）
-    ros::Publisher pubLaserOdometryIncremental; // 发布雷达里程计（增量）
     ros::Publisher pubKeyPoses; // 发布3D轨迹
-    ros::Publisher pubPath; // 发布6D轨迹
+    ros::Publisher pubLaserPath; // 发布6D轨迹
+    ros::Publisher pubRecentFrameCloud; // 发布局部地图关键帧点云
+    ros::Publisher pubCurrFrameCloudFlt; // 发布当前雷达帧的下采样点云
+    ros::Publisher pubCurrFrameCloudRaw; // 发布当前雷达帧的原始点云
+    ros::Publisher pubSLAMInfo; // publish SLAM infomation for 3rd-party usage
     ros::Publisher pubHistoryKeyFrames; // 发布回环检测的历史关键帧点云
     ros::Publisher pubIcpKeyFrames; // 发布回环检测成功的关键帧点云
-    ros::Publisher pubRecentKeyFrames; // 发布局部地图关键帧点云
-    ros::Publisher pubRecentKeyFrame; // 发布当前雷达帧的下采样点云
-    ros::Publisher pubCloudRegisteredRaw; // 发布当前雷达帧的原始点云
     ros::Publisher pubLoopConstraintEdge; // 发布回环检测结果
-    ros::Publisher pubSLAMInfo; // publish SLAM infomation for 3rd-party usage
-    ros::Publisher pubGpsOdom;
+    ros::Publisher pubGpsOdometry;
 
     // ROS topic suscribers
     ros::Subscriber subCloud; // 订阅从featureExtraction模块发布出来的点云信息集合
-    ros::Subscriber subGPS; // 订阅GPS里程计（实际是由robot_localization包计算后的GPS位姿）
     ros::Subscriber subLoop; // 订阅外部回环检测信息
+    ros::Subscriber subGps; // 订阅GPS里程计（实际是由robot_localization包计算后的GPS位姿）
+    ros::Subscriber subImu; // 订阅原始IMU数据
+
+    int numImuSamples = 0;
+    EntityPose imuOdometry;
 
     // ROS services
     ros::ServiceServer srvSaveMap; // 保存地图服务接口
@@ -93,10 +97,6 @@ public:
     nav_msgs::Path globalPath; // 全局关键帧轨迹
     ros::Time laserTimeStamp; // 当前雷达帧的时间戳
     std::deque<sensor_msgs::PointCloud2> cloudQueue;
-
-    // Publish odometry for ROS (incremental)
-    bool lastIncreOdomPubFlag = false;
-    Eigen::Affine3f increOdomAffine; // incremental odometry in affine
 
     // publish SLAM infomation for 3rd-party usage
     int lastSLAMInfoPubSize = -1;
@@ -107,27 +107,28 @@ public:
     tf::TransformBroadcaster tfMap2Odom;
     tf::TransformBroadcaster tfOdom2Baselink;
     tf::TransformBroadcaster tfLidar2Baselink;
+    tf::TransformBroadcaster tfIOdomToImu;
 
 public:
     MapCloudBuilderNode()
     {
-        pubKeyPoses                 = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/trajectory", 1);
         pubLaserCloudSurround       = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/map_global", 1);
         pubLaserOdometryGlobal      = nhandle_.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry", 1);
-        pubLaserOdometryIncremental = nhandle_.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry_incremental", 1);
-        pubPath                     = nhandle_.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
-        pubRecentKeyFrames          = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/map_local", 1);
-        pubRecentKeyFrame           = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_registered", 1);
-        pubCloudRegisteredRaw       = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_registered_raw", 1);
+        pubKeyPoses                 = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/trajectory", 1);
+        pubLaserPath                = nhandle_.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
+        pubRecentFrameCloud         = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/map_local", 1);
+        pubCurrFrameCloudFlt        = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_registered", 1);
+        pubCurrFrameCloudRaw        = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/cloud_registered_raw", 1);
         pubSLAMInfo                 = nhandle_.advertise<lio_sam::cloud_info>("lio_sam/mapping/slam_info", 1);
-        pubGpsOdom                  = nhandle_.advertise<nav_msgs::Odometry> ("lio_sam/mapping/gps_odom", 1);
         pubHistoryKeyFrames         = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_history_cloud", 1);
         pubIcpKeyFrames             = nhandle_.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/icp_loop_closure_corrected_cloud", 1);
         pubLoopConstraintEdge       = nhandle_.advertise<visualization_msgs::MarkerArray>("/lio_sam/mapping/loop_closure_constraints", 1);
+        pubGpsOdometry              = nhandle_.advertise<nav_msgs::Odometry> ("lio_sam/mapping/gps_odom", 1);
 
         subCloud = nhandle_.subscribe<sensor_msgs::PointCloud2>(params_.pointCloudTopic, 5, &MapCloudBuilderNode::laserCloudHandler, this, ros::TransportHints().tcpNoDelay());
-        subGPS   = nhandle_.subscribe<nav_msgs::Odometry> (params_.gpsTopic, 200, &MapCloudBuilderNode::gpsHandler, this, ros::TransportHints().tcpNoDelay());
         subLoop  = nhandle_.subscribe<std_msgs::Float64MultiArray>("lio_loop/loop_closure_detection", 1, &MapCloudBuilderNode::loopInfoHandler, this, ros::TransportHints().tcpNoDelay());
+        subGps   = nhandle_.subscribe<nav_msgs::Odometry> (params_.gpsTopic, 200, &MapCloudBuilderNode::gpsHandler, this, ros::TransportHints().tcpNoDelay());
+        subImu   = nhandle_.subscribe<sensor_msgs::Imu>(params_.imuTopic, 2000, &MapCloudBuilderNode::imuHandler, this, ros::TransportHints().tcpNoDelay());
 
         srvSaveMap = nhandle_.advertiseService("lio_sam/save_map", &MapCloudBuilderNode::saveMapService, this);
 
@@ -140,6 +141,35 @@ public:
     {
         res.success = mapCloudBuilder_->saveCloudMap(req.destination, req.resolution);
         return true;
+    }
+
+    void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
+    {
+        sensor_msgs::Imu thisImu = alignImuToLidar(*imuMsg, params_.extRot, params_.extQRPY);
+        EntityPose imuSample = poseFromImuMsg(thisImu, true);
+        imuSample.index = numImuSamples++;
+
+        EntityPose imuState;
+        if (mapCloudBuilder_->processImuSample(imuSample, imuState)) {
+            imuOdometry = imuState;
+        }
+
+        // debug IMU data
+        // cout << std::setprecision(6);
+        // cout << "IMU acc: " << endl;
+        // cout << "x: " << thisImu.linear_acceleration.x << 
+        //       ", y: " << thisImu.linear_acceleration.y << 
+        //       ", z: " << thisImu.linear_acceleration.z << endl;
+        // cout << "IMU gyro: " << endl;
+        // cout << "x: " << thisImu.angular_velocity.x << 
+        //       ", y: " << thisImu.angular_velocity.y << 
+        //       ", z: " << thisImu.angular_velocity.z << endl;
+        // double imuRoll, imuPitch, imuYaw;
+        // tf::Quaternion orientation;
+        // tf::quaternionMsgToTF(thisImu.orientation, orientation);
+        // tf::Matrix3x3(orientation).getRPY(imuRoll, imuPitch, imuYaw);
+        // cout << "IMU roll pitch yaw: " << endl;
+        // cout << "roll: " << imuRoll << ", pitch: " << imuPitch << ", yaw: " << imuYaw << endl << endl;
     }
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
@@ -287,6 +317,22 @@ public:
             tfLidar2Baselink.sendTransform(tf::StampedTransform(lidarToBaselink, laserTimeStamp, params_.lidarFrame, params_.baselinkFrame));
         }
 
+        if (params_.useImuData) {
+            EntityPose poseIncr = imuOdometry.betweenTo(laserPoseCurr);
+            //cout << "TF imu: " << poseIncr.print() << endl;
+            double px = poseIncr.position.x();
+            double py = poseIncr.position.y();
+            double pz = poseIncr.position.z();
+            double qx = poseIncr.orientation.x();
+            double qy = poseIncr.orientation.y();
+            double qz = poseIncr.orientation.z();
+            double qw = poseIncr.orientation.w();
+            // Publish TF
+            tf::Transform transform = tf::Transform(tf::Quaternion(qx, qy, qz, qw), tf::Vector3(px, py, pz));
+            tf::StampedTransform odomToImu = tf::StampedTransform(transform, laserTimeStamp, params_.odometryFrame, "imu");
+            tfIOdomToImu.sendTransform(odomToImu);
+        }
+
         // Publish odometry for ROS (global)
         nav_msgs::Odometry laserOdometryROS;
         laserOdometryROS.header.stamp = laserTimeStamp;
@@ -300,27 +346,6 @@ public:
         laserOdometryROS.pose.pose.orientation.y = qy;
         laserOdometryROS.pose.pose.orientation.z = qz;
         pubLaserOdometryGlobal.publish(laserOdometryROS);
-
-        // Publish odometry for ROS (incremental)
-        nav_msgs::Odometry laserOdomIncremental; // incremental odometry msg
-        increOdomAffine = laserPoseCurr.toAffine().cast<float>();
-        if (lastIncreOdomPubFlag == false) {
-            lastIncreOdomPubFlag = true;
-            laserOdomIncremental = laserOdometryROS;
-        }
-        else {
-            float x, y, z, roll, pitch, yaw;
-            pcl::getTranslationAndEulerAngles(increOdomAffine, x, y, z, roll, pitch, yaw);
-            laserOdomIncremental.header.stamp = laserTimeStamp;
-            laserOdomIncremental.header.frame_id = params_.odometryFrame;
-            laserOdomIncremental.child_frame_id = "odom_mapping";
-            laserOdomIncremental.pose.pose.position.x = x;
-            laserOdomIncremental.pose.pose.position.y = y;
-            laserOdomIncremental.pose.pose.position.z = z;
-            laserOdomIncremental.pose.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(roll, pitch, yaw);
-            laserOdomIncremental.pose.covariance[0] = 0;
-        }
-        pubLaserOdometryIncremental.publish(laserOdomIncremental);
     }
 
     void publishFrames()
@@ -349,25 +374,25 @@ public:
         publishCloud(pubKeyPoses, cloudKeyPoses3D, laserTimeStamp, params_.odometryFrame);
 
         // Publish surrounding key frames
-        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, laserTimeStamp, params_.odometryFrame);
+        publishCloud(pubRecentFrameCloud, laserCloudSurfFromMapDS, laserTimeStamp, params_.odometryFrame);
 
         // publish registered key frame
-        if (pubRecentKeyFrame.getNumSubscribers() != 0) {
+        if (pubCurrFrameCloudFlt.getNumSubscribers() != 0) {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             *cloudOut += *transformPointCloud(laserCloudCornerLastDS, laserPoseCurr);
             *cloudOut += *transformPointCloud(laserCloudSurfLastDS, laserPoseCurr);
-            publishCloud(pubRecentKeyFrame, cloudOut, laserTimeStamp, params_.odometryFrame);
+            publishCloud(pubCurrFrameCloudFlt, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
         // publish registered high-res raw cloud
-        if (pubCloudRegisteredRaw.getNumSubscribers() != 0) {
+        if (pubCurrFrameCloudRaw.getNumSubscribers() != 0) {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             *cloudOut = *transformPointCloud(extractedCloud, laserPoseCurr);
-            publishCloud(pubCloudRegisteredRaw, cloudOut, laserTimeStamp, params_.odometryFrame);
+            publishCloud(pubCurrFrameCloudRaw, cloudOut, laserTimeStamp, params_.odometryFrame);
         }
 
-        // publish path
-        if (pubPath.getNumSubscribers() != 0) {
+        // publish laser path
+        if (pubLaserPath.getNumSubscribers() != 0) {
             // clear path
             globalPath.poses.clear();
             for (int i = 0; i < (int)mapPoseKeyFrames->size(); ++i) {
@@ -375,12 +400,11 @@ public:
             }
             globalPath.header.stamp = laserTimeStamp;
             globalPath.header.frame_id = params_.odometryFrame;
-            pubPath.publish(globalPath);
+            pubLaserPath.publish(globalPath);
         }
 
         // publish SLAM infomation for 3rd-party usage
-        if (pubSLAMInfo.getNumSubscribers() != 0)
-        {
+        if (pubSLAMInfo.getNumSubscribers() != 0) {
             if (lastSLAMInfoPubSize != cloudKeyPoses6D->size()) {
                 lio_sam::cloud_info slamInfo;
                 slamInfo.header.stamp = laserTimeStamp;
@@ -466,10 +490,8 @@ public:
         std::vector<int> pointSearchIndGlobalMap;
         std::vector<float> pointSearchSqDisGlobalMap;
         // search near key frames to visualize
-        //mtxCloud.lock();
         kdtreeGlobalMap->setInputCloud(cloudKeyPoses3D);
         kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), params_.globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
-        //mtxCloud.unlock();
 
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
             globalMapKeyPoses->push_back(cloudKeyPoses3D->points[pointSearchIndGlobalMap[i]]);

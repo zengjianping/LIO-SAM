@@ -141,6 +141,7 @@ struct ConfigParameter
     int featureMatchMethod;
     bool undistortScan;
     float scanPeriod;
+    bool deskewLaserScan;
 
 };
 

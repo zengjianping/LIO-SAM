@@ -103,7 +103,7 @@ lio_sam:
   globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
 
   usePoseOptimize: true
-  useImuData: false
+  useImuData: true
   useGpsData: false
   sequenceColumn: false
   mappingIntervalTime: 0.0
@@ -115,6 +115,7 @@ lio_sam:
   featureMatchMethod: 0
   undistortScan: false
   scanPeriod: 0.1
+  deskewLaserScan: true
 
 # Navsat (convert GPS coordinates to Cartesian)
 navsat:

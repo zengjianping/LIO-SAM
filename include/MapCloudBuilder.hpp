@@ -23,7 +23,8 @@ public:
         // function switch
         bool useLoopClosure = true;
         bool usePoseOptimize = true;
-        bool useImuData = true;
+        bool useImuData = false;
+        bool deskewLaserScan = false;
         bool useGpsData = false;
         LaserCloudRegister::Type registerType = LaserCloudRegister::NEWTON;
 
@@ -53,7 +54,7 @@ public:
     void processLoopClosure();
     void processLoopInfo(const std::pair<double,double>& info);
     void processGpsSample(const EntityPose& gpsSample);
-    void processImuSample(const EntityPose& imuSample);
+    bool processImuSample(const EntityPose& imuSample, EntityPose& imuState);
     bool processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr laserCloud, double laserTime);
     bool saveCloudMap(const string& dataDir, float mapResolution);
 
@@ -74,6 +75,7 @@ protected:
 
 protected:
     void extractPointCloud();
+    bool _getCloudSkewPose(EntityPose& skewPose);
     void updateInitialGuess();
     void extractSurroundingKeyFrames();
     void _extractNearby();

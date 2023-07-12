@@ -30,26 +30,36 @@ ImuOdometryPredictor::ImuOdometryPredictor(const Options& options)
     resetStatus();
 }
 
-bool ImuOdometryPredictor::predict(const EntityPose& imuSample, EntityPose& imuPose)
+//int pncnt = 3;
+
+bool ImuOdometryPredictor::predict(const EntityPose& imuSample, EntityPose& imuState)
 {
     imuQueue_.push_back(imuSample);
 
-    if (!doneFirstOpt_) {
+    if (!systemInitialized_) {
         return false;
     }
 
     // predict odometry
-    gtsam::NavState imuState = predictOdometry(odomState_, odomBias_, imuSample);
-    imuPose = EntityPose(imuState);
+    gtsam::NavState gtsamState = predictOdometry(odomState_, odomBias_, imuSample);
+    imuState = EntityPose(gtsamState);
+    imuState.timestamp = imuSample.timestamp;
+    imuState.index = imuSample.index;
+    //if (pncnt > 0) {
+    //    //cout << "Imu sample: " << imuSample.print() << endl;
+    //    cout << "Imu state: " << imuState.print() << endl;
+    //    pncnt--;
+    //}
 
     return true;
 }
 
-bool ImuOdometryPredictor::reset(const EntityPose& odomPose, bool degenerate)
+bool ImuOdometryPredictor::reset(const EntityPose& odomState, bool degenerate)
 {
     const double delta_t = 0; // 在做IMU数据和雷达里程计同步过程中的时间间隔
-    gtsam::Pose3 gtsamPose = odomPose.toGtsamPose();
-    double odomTime = odomPose.timestamp;
+    gtsam::NavState gtsamState = odomState.toGtsamState();
+    double odomTime = odomState.timestamp;
+    //cout << "Odom state: " << odomState.print() << endl;
 
     // 1. integrate imu data and optimize
     std::vector<EntityPose> imuSamples;
@@ -59,13 +69,13 @@ bool ImuOdometryPredictor::reset(const EntityPose& odomPose, bool degenerate)
         const EntityPose& imuSample = imuQueue_.front();
         if (imuSample.timestamp < odomTime - delta_t) {
             imuSamples.push_back(imuSample);
-            imuQueue_.pop_front();
             lastImuQT = imuSample.timestamp;
+            imuQueue_.pop_front();
         } else {
             break;
         }
     }
-    if (!optimizeOdometry(gtsamPose, imuSamples, degenerate)) {
+    if (!optimizeOdometry(gtsamState, imuSamples, degenerate)) {
         return false;
     }
 
@@ -79,6 +89,7 @@ bool ImuOdometryPredictor::reset(const EntityPose& odomPose, bool degenerate)
     }
     resetImuIntegrator(odomBias_, imuSamples, lastImuQT);
 
+    //pncnt = 3;
     return true;
 }
 
@@ -86,6 +97,7 @@ gtsam::NavState ImuOdometryPredictor::predictOdometry(const gtsam::NavState& pre
 {
     double dt = (lastImuTimePrd_ < 0) ? (1.0 / options_.imuRate) : (imuSample.timestamp - lastImuTimePrd_);
     lastImuTimePrd_ = imuSample.timestamp;
+    //cout << "predict dt: " << dt << ", index: " << imuSample.index << ", time: " << imuSample.timestamp << endl;
 
     // integrate this single imu message
     imuIntegratorPrd_->integrateMeasurement(
@@ -102,11 +114,13 @@ bool ImuOdometryPredictor::resetImuIntegrator(const gtsam::imuBias::ConstantBias
     // reset bias use the newly optimized bias
     imuIntegratorPrd_->resetIntegrationAndSetBias(prevBias);
     lastImuTimePrd_ = lastImuTime;
+    //cout << "lastImuTimePrd: " << lastImuTimePrd_ << endl;
 
     // integrate imu message from the beginning of this optimization
     for (const EntityPose& imuSample : imuSamples) {
         // pop and integrate imu data that is between two optimizations
         double dt = (lastImuTimePrd_ < 0) ? (1.0 / options_.imuRate) : (imuSample.timestamp - lastImuTimePrd_);
+        //cout << "reset dt: " << dt << ", index: " << imuSample.index << ", time: " << imuSample.timestamp << endl;
         imuIntegratorPrd_->integrateMeasurement(
             gtsam::Vector3(imuSample.linearAcc.x(), imuSample.linearAcc.y(), imuSample.linearAcc.z()),
             gtsam::Vector3(imuSample.angularVel.x(), imuSample.angularVel.y(), imuSample.angularVel.z()), dt);
@@ -136,14 +150,14 @@ void ImuOdometryPredictor::resetStatus()
     doneFirstOpt_ = false;
     lastImuTimeOpt_ = -1;
     lastImuTimePrd_ = -1;
-    key_ = 1;
+    key_ = 0;
 }
 
-bool ImuOdometryPredictor::optimizeOdometry(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate)
+bool ImuOdometryPredictor::optimizeOdometry(const gtsam::NavState& odomState, const std::vector<EntityPose>& imuSamples, bool degenerate)
 {
-    if (systemInitialized_ == false) {
+    if (!systemInitialized_) {
         // initialize system
-        return startOptimize(odomPose, imuSamples);
+        return startOptimize(odomState, imuSamples);
     }
     
     if (key_ == 100) {
@@ -152,10 +166,10 @@ bool ImuOdometryPredictor::optimizeOdometry(const gtsam::Pose3& odomPose, const 
     }
 
     // integrate imu data and optimize
-    return processOptimize(odomPose, imuSamples, degenerate);
+    return processOptimize(odomState, imuSamples, degenerate);
 }
 
-bool ImuOdometryPredictor::startOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples)
+bool ImuOdometryPredictor::startOptimize(const gtsam::NavState& odomState, const std::vector<EntityPose>& imuSamples)
 {
     for (const EntityPose& imuSample : imuSamples) {
         lastImuTimeOpt_ = imuSample.timestamp;
@@ -165,12 +179,12 @@ bool ImuOdometryPredictor::startOptimize(const gtsam::Pose3& odomPose, const std
     resetGraph();
 
     // initial pose
-    prevPose_ = odomPose;
+    prevPose_ = odomState.pose();
     gtsam::PriorFactor<gtsam::Pose3> priorPose(X(0), prevPose_, priorPoseNoise_);
     graphFactors_.add(priorPose);
 
     // initial velocity
-    prevVel_ = gtsam::Vector3(0, 0, 0);
+    prevVel_ = odomState.velocity(); //gtsam::Vector3(0, 0, 0);
     gtsam::PriorFactor<gtsam::Vector3> priorVel(V(0), prevVel_, priorVelNoise_);
     graphFactors_.add(priorVel);
 
@@ -191,6 +205,7 @@ bool ImuOdometryPredictor::startOptimize(const gtsam::Pose3& odomPose, const std
 
     imuIntegratorOpt_->resetIntegrationAndSetBias(prevBias_);
 
+    prevState_ = gtsam::NavState(prevPose_, prevVel_); //odomState;
     odomState_ = prevState_;
     odomBias_  = prevBias_;
     
@@ -237,11 +252,13 @@ bool ImuOdometryPredictor::restartOptimize()
     return true;
 }
 
-bool ImuOdometryPredictor::processOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate)
+bool ImuOdometryPredictor::processOptimize(const gtsam::NavState& odomState, const std::vector<EntityPose>& imuSamples, bool degenerate)
 {
+    //cout << "lastImuTimeOpt: " << lastImuTimeOpt_ << endl;
     for (const EntityPose& imuSample : imuSamples) {
         // pop and integrate imu data that is between two optimizations
         double dt = (lastImuTimeOpt_ < 0) ? (1.0 / options_.imuRate) : (imuSample.timestamp - lastImuTimeOpt_);
+        //cout << "optimize dt: " << dt << ", index: " << imuSample.index << ", time: " << imuSample.timestamp << endl;
         imuIntegratorOpt_->integrateMeasurement(
                 gtsam::Vector3(imuSample.linearAcc.x(), imuSample.linearAcc.y(), imuSample.linearAcc.z()),
                 gtsam::Vector3(imuSample.angularVel.x(), imuSample.angularVel.y(), imuSample.angularVel.z()), dt);
@@ -249,16 +266,16 @@ bool ImuOdometryPredictor::processOptimize(const gtsam::Pose3& odomPose, const s
     }
 
     // add imu factor to graph
-    const gtsam::PreintegratedImuMeasurements& preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorOpt_);
-    gtsam::ImuFactor imu_factor(X(key_ - 1), V(key_ - 1), X(key_), V(key_), B(key_ - 1), preint_imu);
-    graphFactors_.add(imu_factor);
+    const gtsam::PreintegratedImuMeasurements& preintImu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorOpt_);
+    gtsam::ImuFactor imuFactor(X(key_ - 1), V(key_ - 1), X(key_), V(key_), B(key_ - 1), preintImu);
+    graphFactors_.add(imuFactor);
 
     // add imu bias between factor
     graphFactors_.add(gtsam::BetweenFactor<gtsam::imuBias::ConstantBias>(B(key_ - 1), B(key_), gtsam::imuBias::ConstantBias(),
                       gtsam::noiseModel::Diagonal::Sigmas(sqrt(imuIntegratorOpt_->deltaTij()) * noiseModelBetweenBias_)));
 
     // add pose factor
-    gtsam::Pose3 curPose = odomPose;
+    gtsam::Pose3 curPose = odomState.pose();
     gtsam::PriorFactor<gtsam::Pose3> pose_factor(X(key_), curPose, degenerate ? correctionNoise2_ : correctionNoise_);
     graphFactors_.add(pose_factor);
 
@@ -291,6 +308,7 @@ bool ImuOdometryPredictor::processOptimize(const gtsam::Pose3& odomPose, const s
     }
     odomState_ = prevState_;
     odomBias_  = prevBias_;
+    //cout << "Prev state: " << EntityPose(odomState_).print() << endl;
 
     ++key_;
     doneFirstOpt_ = true;

@@ -123,17 +123,21 @@ void MapCloudBuilder::consumeGpsSamples(double laserTime, std::vector<EntityPose
     }
 }
 
-void MapCloudBuilder::processImuSample(const EntityPose& imuSample)
+bool MapCloudBuilder::processImuSample(const EntityPose& imuSample, EntityPose& imuState)
 {
     if (!options_.useImuData)
-        return;
+        return false;
 
     std::lock_guard<std::mutex> lock(mtxImu_);
 
-    EntityPose imuPose;
-    if (imuOdometryPredictor_->predict(imuSample, imuPose)) {
-        imuOdomQueue_.push_back(imuPose);
+    while (imuOdomQueue_.size() >= 5000) {
+        imuOdomQueue_.pop_front();
     }
+    if (imuOdometryPredictor_->predict(imuSample, imuState)) {
+        imuOdomQueue_.push_back(imuState);
+        return true;
+    }
+    return false;
 }
 
 void MapCloudBuilder::resetImuOdometry()
@@ -181,8 +185,12 @@ bool MapCloudBuilder::processLaserCloud(const pcl::PointCloud<PointXYZIRT>::Ptr 
 
 void MapCloudBuilder::extractPointCloud()
 {
-    EntityPose *skewPose = nullptr;
-    // TODO...
+    EntityPose *skewPose = nullptr, tempPose;
+    if (options_.useImuData && options_.deskewLaserScan) {
+        if (_getCloudSkewPose(tempPose)) {
+            skewPose = &tempPose;
+        }
+    }
 
     laserCloudExtractor_->process(laserCloudIn_, laserTimeCurr_, skewPose);
     extractedCloud_ = laserCloudExtractor_->getExtractedCloud();
@@ -199,6 +207,39 @@ void MapCloudBuilder::extractPointCloud()
     downSizeFilterSurf_.filter(*laserCloudSurfLastDS_);
 }
 
+bool MapCloudBuilder::_getCloudSkewPose(EntityPose& skewPose)
+{
+    std::lock_guard<std::mutex> lock(mtxImu_);
+
+    double laserTimeEnd = laserTimeCurr_ + laserCloudIn_->points.back().time;
+    int idxStart = -1, idxEnd = -1;
+    double diffStartMin = 0.01, diffEndMin = 0.01;
+
+    for (int i = 0; i < (int)imuOdomQueue_.size(); i++) {
+        const EntityPose& pose = imuOdomQueue_[i];
+        double diffStart = fabs(pose.timestamp - laserTimeCurr_);
+        double diffEnd = fabs(pose.timestamp - laserTimeEnd);
+        if (diffStartMin > diffStart) {
+            diffStartMin = diffStart;
+            idxStart = i;
+        }
+        if (diffEndMin > diffEnd) {
+            diffEndMin = diffEnd;
+            idxEnd = i;
+        }
+    }
+
+    if (idxStart >= 0 && idxEnd >= 0 && idxStart < idxEnd) {
+        const EntityPose& poseStart = imuOdomQueue_[idxStart];
+        const EntityPose& poseEnd = imuOdomQueue_[idxEnd];
+        skewPose = poseStart.betweenTo(poseEnd);
+        cout << "Skew pose: " << skewPose.print() << endl;
+        return true;
+    }
+
+    return false;
+}
+
 void MapCloudBuilder::updateInitialGuess()
 {
     EntityPose poseIncr = laserPosePrev_.betweenTo(laserPoseCurr_);
@@ -206,7 +247,23 @@ void MapCloudBuilder::updateInitialGuess()
     laserPosePrev_ = laserPoseCurr_;
 
     // Imu odometry
-    // TODO...
+    if (options_.useImuData) {
+        std::lock_guard<std::mutex> lock(mtxImu_);
+        int idxStart = -1;
+        double diffStartMin = 0.01;
+        for (int i = 0; i < (int)imuOdomQueue_.size(); i++) {
+            const EntityPose& pose = imuOdomQueue_[i];
+            double diffStart = fabs(pose.timestamp - laserTimeCurr_);
+            if (diffStartMin > diffStart) {
+                diffStartMin = diffStart;
+                idxStart = i;
+            }
+        }
+        if (idxStart >= 0) {
+            laserPoseGuess_ = imuOdomQueue_[idxStart];
+            cout << "Imu predicted pose: " << laserPoseGuess_.print() << endl;
+        }
+    }
 }
 
 void MapCloudBuilder::_extractNearby()
@@ -318,10 +375,8 @@ bool MapCloudBuilder::saveFrame()
     if (mapPoseKeyFrames_->empty())
         return true;
 
-    //const PointTypePose& pose6D = mapPoseKeyFrames_->back().pose6D;
     const EntityPose& pose = mapPoseKeyFrames_->back().pose;
     if (options_.mappingIntervalTime > 0.0) {
-        //if (laserTimeCurr_ - pose6D.time > options_.mappingIntervalTime)
         if (laserTimeCurr_ - pose.timestamp > options_.mappingIntervalTime)
             return true;
     }
@@ -383,6 +438,11 @@ void MapCloudBuilder::optimizeKeyFrames()
 void MapCloudBuilder::cloudPostprocess()
 {
     resetImuOdometry();
+    cout << "Optimized lidar pose: " << laserPoseCurr_.print() << endl;
+    if (imuOdomQueue_.size() > 0) {
+        EntityPose imuPose = imuOdomQueue_.back();
+        cout << "Lastest imu pose: " << imuPose.print() << endl;
+    }
 }
 
 bool MapCloudBuilder::saveCloudMap(const string& dataDir, float mapResolution)

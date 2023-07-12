@@ -59,6 +59,21 @@ void EntityPose::init()
     //covariance;
 }
 
+std::string EntityPose::print() const
+{
+    char buffer[1000];
+    sprintf(buffer, "timestamp(%f), index(%d), orientation(%f,%f,%f,%f), position(%f,%f,%f), angular(%f,%f,%f), angularVel(%f,%f,%f), linearVel(%f,%f,%f), linearAcc(%f,%f,%f)",
+            timestamp, index,
+            orientation.w(), orientation.x(), orientation.y(), orientation.z(),
+            position.x(), position.y(), position.z(),
+            angular.x(), angular.y(), angular.z(),
+            angularVel.x(), angularVel.y(), angularVel.z(),
+            linearVel.x(), linearVel.y(), linearVel.z(),
+            linearAcc.x(), linearAcc.y(), linearAcc.z()
+        );
+    return buffer;
+}
+
 void EntityPose::calculateAngular()
 {
     //angular = orientation.toRotationMatrix().eulerAngles(0,1,2);
@@ -121,6 +136,7 @@ EntityPose::EntityPose(const gtsam::NavState& transform)
     init();
     orientation = transform.quaternion();
     position = transform.position();
+    linearVel = transform.velocity();
     //angular = transform.attitude().rpy();
     calculateAngular();
 }
@@ -148,7 +164,7 @@ gtsam::Pose3 EntityPose::toGtsamPose() const
 
 gtsam::NavState EntityPose::toGtsamState() const
 {
-    return gtsam::NavState(gtsam::Rot3(orientation), gtsam::Point3(position), gtsam::Velocity3(0,0,0));
+    return gtsam::NavState(gtsam::Rot3(orientation), gtsam::Point3(position), gtsam::Velocity3(linearVel));
 }
 
 EntityPose EntityPose::inverse() const

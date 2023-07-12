@@ -39,8 +39,8 @@ public:
     EntityPose(const gtsam::NavState& transform);
 
     void init();
+    std::string print() const;
     void calculateAngular();
-
     void updateFrom(const gtsam::Pose3& transform);
 
     Eigen::Isometry3d toIsometry() const;

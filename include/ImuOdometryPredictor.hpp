@@ -21,18 +21,18 @@ public:
     ImuOdometryPredictor(const Options& options);
 
 public:
-    bool reset(const EntityPose& odomPose, bool degenerate);
-    bool predict(const EntityPose& imuSample, EntityPose& imuPose);
+    bool reset(const EntityPose& odomState, bool degenerate);
+    bool predict(const EntityPose& imuSample, EntityPose& imuState);
 
 protected:
     gtsam::NavState predictOdometry(const gtsam::NavState& prevState, const gtsam::imuBias::ConstantBias& prevBias, const EntityPose& imuSample);
     bool resetImuIntegrator(const gtsam::imuBias::ConstantBias& prevBias, const std::vector<EntityPose>& imuSamples=std::vector<EntityPose>(), double lastImuTime=-1);
     void resetGraph();
     void resetStatus();
-    bool optimizeOdometry(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate);
-    bool startOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples);
+    bool optimizeOdometry(const gtsam::NavState& odomState, const std::vector<EntityPose>& imuSamples, bool degenerate);
+    bool startOptimize(const gtsam::NavState& odomStatee, const std::vector<EntityPose>& imuSamples);
     bool restartOptimize();
-    bool processOptimize(const gtsam::Pose3& odomPose, const std::vector<EntityPose>& imuSamples, bool degenerate);
+    bool processOptimize(const gtsam::NavState& odomState, const std::vector<EntityPose>& imuSamples, bool degenerate);
     bool failureDetection(const gtsam::Vector3& velCur, const gtsam::imuBias::ConstantBias& biasCur);
 
 protected:
