@@ -241,7 +241,7 @@ sensor_msgs::PointCloud2 publishCloud(const ros::Publisher& thisPub, const T& th
     return tempCloud;
 }
 
-sensor_msgs::Imu alignImuToLidar(const sensor_msgs::Imu& imuIn, const Eigen::Matrix3d& extRot, const Eigen::Quaterniond& extQRPY);
+sensor_msgs::Imu alignImuToLidar(const sensor_msgs::Imu& imuIn, const Eigen::Matrix3d& extRot, const Eigen::Quaterniond& extQRPY, bool has9axis);
 pcl::PointCloud<PointXYZIRT>::Ptr adaptLaserCloud(sensor_msgs::PointCloud2& laserCloudMsg, LidarType lidarType);
 EntityPose poseFromImuMsg(const sensor_msgs::Imu& imuMsg, bool has9axis);
 EntityPose poseFromOdometryMsg(const nav_msgs::Odometry& odomMsg);

@@ -126,7 +126,7 @@ RosCommonNode::RosCommonNode()
     usleep(100);
 }
 
-sensor_msgs::Imu alignImuToLidar(const sensor_msgs::Imu& imuIn, const Eigen::Matrix3d& extRot, const Eigen::Quaterniond& extQRPY)
+sensor_msgs::Imu alignImuToLidar(const sensor_msgs::Imu& imuIn, const Eigen::Matrix3d& extRot, const Eigen::Quaterniond& extQRPY, bool has9axis)
 {
     sensor_msgs::Imu imuOut = imuIn;
 
@@ -145,16 +145,18 @@ sensor_msgs::Imu alignImuToLidar(const sensor_msgs::Imu& imuIn, const Eigen::Mat
     imuOut.angular_velocity.z = gyr.z();
 
     // rotate roll pitch yaw
-    Eigen::Quaterniond q_from(imuIn.orientation.w, imuIn.orientation.x, imuIn.orientation.y, imuIn.orientation.z);
-    Eigen::Quaterniond q_final = q_from * extQRPY;
-    imuOut.orientation.x = q_final.x();
-    imuOut.orientation.y = q_final.y();
-    imuOut.orientation.z = q_final.z();
-    imuOut.orientation.w = q_final.w();
+    if (has9axis) {
+        Eigen::Quaterniond q_from(imuIn.orientation.w, imuIn.orientation.x, imuIn.orientation.y, imuIn.orientation.z);
+        Eigen::Quaterniond q_final = q_from * extQRPY;
+        imuOut.orientation.x = q_final.x();
+        imuOut.orientation.y = q_final.y();
+        imuOut.orientation.z = q_final.z();
+        imuOut.orientation.w = q_final.w();
 
-    if (sqrt(q_final.x()*q_final.x() + q_final.y()*q_final.y() + q_final.z()*q_final.z() + q_final.w()*q_final.w()) < 0.1) {
-        ROS_ERROR("Invalid quaternion, please use a 9-axis IMU!");
-        ros::shutdown();
+        if (sqrt(q_final.x()*q_final.x() + q_final.y()*q_final.y() + q_final.z()*q_final.z() + q_final.w()*q_final.w()) < 0.1) {
+            ROS_ERROR("Invalid quaternion, please use a 9-axis IMU!");
+            ros::shutdown();
+        }
     }
 
     return imuOut;

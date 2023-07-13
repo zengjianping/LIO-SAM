@@ -130,13 +130,15 @@ bool MapCloudBuilder::processImuSample(const EntityPose& imuSample, EntityPose& 
 
     std::lock_guard<std::mutex> lock(mtxImu_);
 
-    while (imuOdomQueue_.size() >= 5000) {
+    while (imuOdomQueue_.size() >= 2000) {
         imuOdomQueue_.pop_front();
     }
     if (imuOdometryPredictor_->predict(imuSample, imuState)) {
         imuOdomQueue_.push_back(imuState);
         return true;
     }
+    
+    cout << "Failed to predict imu odometry: " << imuSample.print() << endl;
     return false;
 }
 
@@ -209,9 +211,14 @@ void MapCloudBuilder::extractPointCloud()
 
 bool MapCloudBuilder::_getCloudSkewPose(EntityPose& skewPose)
 {
+    double laserTimeEnd = laserTimeCurr_ + laserCloudIn_->points.back().time;
+
+    //while (imuOdomQueue_.size() > 0 && imuOdomQueue_.back().timestamp < laserTimeEnd) {
+    //    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    //}
+
     std::lock_guard<std::mutex> lock(mtxImu_);
 
-    double laserTimeEnd = laserTimeCurr_ + laserCloudIn_->points.back().time;
     int idxStart = -1, idxEnd = -1;
     double diffStartMin = 0.01, diffEndMin = 0.01;
 
@@ -233,8 +240,14 @@ bool MapCloudBuilder::_getCloudSkewPose(EntityPose& skewPose)
         const EntityPose& poseStart = imuOdomQueue_[idxStart];
         const EntityPose& poseEnd = imuOdomQueue_[idxEnd];
         skewPose = poseStart.betweenTo(poseEnd);
-        cout << "Skew pose: " << skewPose.print() << endl;
+        cout << "Skew transform: " << skewPose.print() << endl;
         return true;
+    } else {
+        if (imuOdomQueue_.size() > 0) {
+            double imuTimeMin = imuOdomQueue_.front().timestamp;
+            double imuTimeMax = imuOdomQueue_.back().timestamp;
+            cout << "Not found skew transform: " << laserTimeCurr_ << ", " << laserTimeEnd << ", " << imuTimeMin << ", " << imuTimeMax << endl;
+        }
     }
 
     return false;
@@ -262,6 +275,12 @@ void MapCloudBuilder::updateInitialGuess()
         if (idxStart >= 0) {
             laserPoseGuess_ = imuOdomQueue_[idxStart];
             cout << "Imu predicted pose: " << laserPoseGuess_.print() << endl;
+        } else {
+            if (imuOdomQueue_.size() > 0) {
+                double imuTimeMin = imuOdomQueue_.front().timestamp;
+                double imuTimeMax = imuOdomQueue_.back().timestamp;
+                cout << "Not found imu predicted pose: " << laserTimeCurr_ << ", " << imuTimeMin << ", " << imuTimeMax << endl;
+            }
         }
     }
 }

@@ -88,6 +88,7 @@ public:
     ros::Subscriber subGps; // 订阅GPS里程计（实际是由robot_localization包计算后的GPS位姿）
     ros::Subscriber subImu; // 订阅原始IMU数据
 
+
     int numImuSamples = 0;
     EntityPose imuOdometry;
 
@@ -97,6 +98,7 @@ public:
     nav_msgs::Path globalPath; // 全局关键帧轨迹
     ros::Time laserTimeStamp; // 当前雷达帧的时间戳
     std::deque<sensor_msgs::PointCloud2> cloudQueue;
+    std::mutex mtxCloud; // 点云回调函数锁
 
     // publish SLAM infomation for 3rd-party usage
     int lastSLAMInfoPubSize = -1;
@@ -145,8 +147,9 @@ public:
 
     void imuHandler(const sensor_msgs::Imu::ConstPtr& imuMsg)
     {
-        sensor_msgs::Imu thisImu = alignImuToLidar(*imuMsg, params_.extRot, params_.extQRPY);
-        EntityPose imuSample = poseFromImuMsg(thisImu, true);
+        bool has9axis = params_.imuType == 0;
+        sensor_msgs::Imu thisImu = alignImuToLidar(*imuMsg, params_.extRot, params_.extQRPY, has9axis);
+        EntityPose imuSample = poseFromImuMsg(thisImu, has9axis);
         imuSample.index = numImuSamples++;
 
         EntityPose imuState;
@@ -268,18 +271,14 @@ public:
 
     void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
-        // cache point cloud
         cloudQueue.push_back(*laserCloudMsg);
-        if (cloudQueue.size() <= 1)
+        if (cloudQueue.size() <= 2 ) {
             return;
-
-        // convert cloud
+        }
         sensor_msgs::PointCloud2 currentCloudMsg = std::move(cloudQueue.front());
         cloudQueue.pop_front();
 
-        // extract time stamp
         laserTimeStamp = currentCloudMsg.header.stamp;
-
         pcl::PointCloud<PointXYZIRT>::Ptr laserCloud = adaptLaserCloud(currentCloudMsg, params_.lidarType);
 
         if (mapCloudBuilder_->processLaserCloud(laserCloud, laserTimeStamp.toSec())) {
@@ -288,9 +287,49 @@ public:
         }
     }
 
-    void pubTransform()
+    /*void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
+        mtxCloud.lock();
+        cloudQueue.push_back(*laserCloudMsg);
+        while (cloudQueue.size() > 3 ) {
+            cloudQueue.pop_front();
+        }
+        mtxCloud.unlock();
     }
+
+    void laserCloudThread() {
+        ROS_INFO("Laser cloud thread started!");
+
+        ros::Rate rate(10);
+        while (ros::ok()) {
+            sensor_msgs::PointCloud2 currentCloudMsg;
+            bool found = false;
+
+            mtxCloud.lock();
+            if (cloudQueue.size() > 0) {
+                currentCloudMsg = std::move(cloudQueue.front());
+                cloudQueue.pop_front();
+                found = true;
+            }
+            mtxCloud.unlock();
+
+            if (found) {
+                // extract time stamp
+                laserTimeStamp = currentCloudMsg.header.stamp;
+
+                pcl::PointCloud<PointXYZIRT>::Ptr laserCloud = adaptLaserCloud(currentCloudMsg, params_.lidarType);
+
+                if (mapCloudBuilder_->processLaserCloud(laserCloud, laserTimeStamp.toSec())) {
+                    publishOdometry();
+                    publishFrames();
+                }
+            }
+
+            rate.sleep();
+        }
+
+        ROS_INFO("Laser cloud thread ended!");
+    }*/
 
     void publishOdometry()
     {
@@ -532,6 +571,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("\033[1;32m----> Map Cloud Builder Node Started.\033[0m");
     
+    //std::thread laserthread(&MapCloudBuilderNode::laserCloudThread, &MO);
     std::thread loopthread(&MapCloudBuilderNode::loopClosureThread, &MO);
     std::thread visualizeMapThread(&MapCloudBuilderNode::visualizeGlobalMapThread, &MO);
 

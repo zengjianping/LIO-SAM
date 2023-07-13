@@ -46,6 +46,13 @@ Eigen::Vector3d quaternionToEulerAngle(const Eigen::Quaterniond& q)
     return Eigen::Vector3d(roll, pitch, yaw);
 }
 
+Eigen::Vector3d quaternionToEulerAngleByPcl(const Eigen::Quaterniond& q)
+{
+    float roll, pitch, yaw;
+    pcl::getEulerAngles(Eigen::Affine3f(q.cast<float>()), roll, pitch, yaw);
+    return Eigen::Vector3d(roll, pitch, yaw);
+}
+
 void EntityPose::init()
 {
     timestamp = -1;
@@ -77,8 +84,9 @@ std::string EntityPose::print() const
 void EntityPose::calculateAngular()
 {
     //angular = orientation.toRotationMatrix().eulerAngles(0,1,2);
-    //angular = orientation.toRotationMatrix().eulerAngles(3,2,1);
-    angular = quaternionToEulerAngle(orientation);
+    //angular = orientation.toRotationMatrix().eulerAngles(2,1,0);
+    //angular = quaternionToEulerAngle(orientation);
+    angular = quaternionToEulerAngleByPcl(orientation);
 }
 
 EntityPose::EntityPose()
@@ -182,7 +190,10 @@ EntityPose EntityPose::operator *(const EntityPose& other) const
 EntityPose EntityPose::betweenTo(const EntityPose& other) const
 {
     Eigen::Isometry3d transform = toIsometry().inverse() * other.toIsometry();
-    return EntityPose(transform);
+    EntityPose pose = EntityPose(transform);
+    pose.index = other.index - index;
+    pose.timestamp = other.timestamp - timestamp;
+    return pose;
 }
 
 PointType pose3DFromPose6D(const PointTypePose& pose6D)
