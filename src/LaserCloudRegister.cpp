@@ -838,12 +838,14 @@ bool LaserCloudRegisterCeres::solveOptimProblem(int iterCount)
 {
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
-    options.max_num_iterations = 4;
+    options.max_num_iterations = 10;
     options.minimizer_progress_to_stdout = false;
     options.check_gradients = false;
     options.gradient_check_relative_precision = 1e-4;
     ceres::Solver::Summary summary;
     ceres::Solve(options, problem_.get(), &summary);
+
+    cout << summary.BriefReport() << endl;
 
     return true;
 }
