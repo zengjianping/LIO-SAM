@@ -88,9 +88,9 @@ public:
     ros::Subscriber subGps; // 订阅GPS里程计（实际是由robot_localization包计算后的GPS位姿）
     ros::Subscriber subImu; // 订阅原始IMU数据
 
-
     int numImuSamples = 0;
     EntityPose imuOdometry;
+    double lastImuTime = -1;
 
     // ROS services
     ros::ServiceServer srvSaveMap; // 保存地图服务接口
@@ -156,6 +156,7 @@ public:
         if (mapCloudBuilder_->processImuSample(imuSample, imuState)) {
             imuOdometry = imuState;
         }
+        lastImuTime = imuSample.timestamp;
 
         // debug IMU data
         // cout << std::setprecision(6);
@@ -269,6 +270,7 @@ public:
         pubLoopConstraintEdge.publish(markerArray);
     }
 
+#if 0
     void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
         cloudQueue.push_back(*laserCloudMsg);
@@ -287,7 +289,8 @@ public:
         }
     }
 
-    /*void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
+#else
+    void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     {
         mtxCloud.lock();
         cloudQueue.push_back(*laserCloudMsg);
@@ -306,7 +309,7 @@ public:
             bool found = false;
 
             mtxCloud.lock();
-            if (cloudQueue.size() > 0) {
+            if (cloudQueue.size() > 0 && cloudQueue.front().header.stamp.toSec() + 0.2 < lastImuTime) {
                 currentCloudMsg = std::move(cloudQueue.front());
                 cloudQueue.pop_front();
                 found = true;
@@ -329,7 +332,8 @@ public:
         }
 
         ROS_INFO("Laser cloud thread ended!");
-    }*/
+    }
+#endif
 
     void publishOdometry()
     {
@@ -571,7 +575,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("\033[1;32m----> Map Cloud Builder Node Started.\033[0m");
     
-    //std::thread laserthread(&MapCloudBuilderNode::laserCloudThread, &MO);
+    std::thread laserthread(&MapCloudBuilderNode::laserCloudThread, &MO);
     std::thread loopthread(&MapCloudBuilderNode::loopClosureThread, &MO);
     std::thread visualizeMapThread(&MapCloudBuilderNode::visualizeGlobalMapThread, &MO);
 
